@@ -112,11 +112,25 @@ function render() {
   el.join.textContent = entrant && canJoin ? "Leave" : "Join next race";
   el.join.hidden = state.phase === "racing" && !!entrant;
   const racing = state.phase === "racing" && entrant && !entrant.finished;
-  if (el.input.disabled === !!racing) {
-    el.input.disabled = !racing;
-    if (racing) el.input.focus();
+  // Typing is how you join: the box is live before a race, and the first
+  // keystroke puts you on the line.
+  const canType = canJoin || racing;
+  if (el.input.disabled === canType) {
+    el.input.disabled = !canType;
+    // a disabled box drops focus; take it back unless you've moved elsewhere
+    if (canType && (document.activeElement === document.body || racing)) el.input.focus();
   }
-  el.input.placeholder = racing ? "Go!" : entrant ? "Get ready…" : "Join to race";
+  el.input.placeholder = racing
+    ? "Go!"
+    : entrant && canJoin
+      ? "Get ready…"
+      : canJoin
+        ? "Start typing to join the next race"
+        : state.phase === "racing"
+          ? entrant
+            ? "Done! Waiting for the others…"
+            : "Race under way. Join the next one when it ends."
+          : "Next race soon…";
 
   el.live.textContent = entrant && (state.phase === "racing" || state.phase === "results")
     ? `${Math.round(entrant.wpm)} wpm · ${accuracyPct()}%`
@@ -153,7 +167,14 @@ function correctPrefix() {
 }
 
 el.input.addEventListener("input", () => {
-  if (!state || state.phase !== "racing") return;
+  if (!state) return;
+  if (state.phase === "lobby" || state.phase === "countdown") {
+    // Before the start, keystrokes join you and are otherwise swallowed.
+    el.input.value = "";
+    if (!mine()) send({ t: "join" });
+    return;
+  }
+  if (state.phase !== "racing") return;
   const text = state.quote.text;
   let next = el.input.value;
   // You can run at most a word past your first mistake; fix it to go on.
