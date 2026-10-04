@@ -45,7 +45,11 @@ export class Room {
     this.id = id;
     // Progress arrives on every keystroke; the room rebroadcasts at most ten
     // times a second, which is fast enough to read as live.
+    // It also drops sockets that have started closing: behind Fly's proxy the
+    // `close` event can trail the close frame by many seconds, and nobody
+    // should be kept waiting on a tab that's gone.
     this.ticker = setInterval(() => {
+      for (const c of this.conns) if (c.ws.readyState !== c.ws.OPEN) this.remove(c);
       if (this.dirty) this.broadcast();
     }, 100);
   }
@@ -66,7 +70,7 @@ export class Room {
   }
 
   remove(conn: Conn): void {
-    this.conns.delete(conn);
+    if (!this.conns.delete(conn)) return;
     // Leaving before the start gives the spot back; leaving mid-race is a DNF.
     const stillHere = [...this.conns].some((c) => c.player.id === conn.player.id);
     if (!stillHere && (this.phase === "lobby" || this.phase === "countdown")) {
