@@ -43,7 +43,7 @@ function historyList(rows: HistoryRow[]): string {
   return `<ol class="history">${rows
     .map(
       (r) =>
-        `<li><span class="who">${r.place ? `${ordinal(r.place)} of ${r.field}` : "DNF"}</span><span class="num">${r.wpm.toFixed(0)} wpm · ${Math.round(r.accuracy * 100)}%</span></li>`,
+        `<li><span class="who">${r.place ? `${ordinal(r.place)} of ${r.field}` : "DNF"}${r.mode === "quotes" ? "" : ` · ${esc(r.mode)}`}</span><span class="num">${r.wpm.toFixed(0)} wpm · ${Math.round(r.accuracy * 100)}%</span></li>`,
     )
     .join("")}</ol>`;
 }
@@ -68,17 +68,41 @@ export function roomPage(
       <h1 id="track-h">Racing on ${esc(label)}</h1>
       <p id="phase" role="status" aria-live="polite">Connecting…</p>
     </div>
+    <div class="modes" role="radiogroup" aria-label="Race mode">
+      <button type="button" class="mode" role="radio" data-mode="quotes" aria-checked="true">Quotes</button>
+      <button type="button" class="mode" role="radio" data-mode="words" aria-checked="false">Words</button>
+      <button type="button" class="mode" role="radio" data-mode="code" aria-checked="false">Code</button>
+      <span id="mode-note" class="mode-note"></span>
+    </div>
     <ul id="lanes" class="lanes" aria-label="Racers"></ul>
+    <div id="banner" class="banner" aria-hidden="true"></div>
     <div id="passage" class="passage" aria-hidden="true"></div>
     <p id="source" class="source"></p>
     <label class="typing">
       <span class="visually-hidden">Type the passage here</span>
-      <input id="input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" disabled>
+      <textarea id="input" rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" disabled></textarea>
     </label>
     <div class="actions">
       <button id="join" type="button" disabled>Join next race</button>
+      <button id="ready" type="button" class="secondary" hidden>Ready</button>
       <span id="me-live" class="live"></span>
     </div>
+    <section id="summary" class="summary" aria-labelledby="summary-h" hidden>
+      <h2 id="summary-h">Last race</h2>
+      <p id="summary-meta" class="source"></p>
+      <figure class="chart">
+        <figcaption>Average WPM over the race. Crosses mark mistakes.</figcaption>
+        <div id="chart"></div>
+        <ul id="legend" class="legend"></ul>
+      </figure>
+      <table class="results">
+        <thead><tr><th scope="col">#</th><th scope="col">Racer</th><th scope="col">WPM</th><th scope="col">Accuracy</th><th scope="col">Mistakes</th></tr></thead>
+        <tbody id="results"></tbody>
+      </table>
+      <div id="who-tabs" class="who-tabs" role="tablist" aria-label="Whose typing to show"></div>
+      <div id="replay" class="passage replay" role="tabpanel"></div>
+      <p id="replay-note" class="source"></p>
+    </section>
   </section>
 
   <aside class="side">

@@ -150,7 +150,7 @@ server.on("upgrade", (req, socket, head) => {
     r.add(conn);
 
     ws.on("message", (data) => {
-      let msg: { t?: string; n?: number; errors?: number; name?: string };
+      let msg: { t?: string; n?: number; errors?: number; miss?: unknown; name?: string; mode?: unknown };
       try {
         msg = JSON.parse(String(data));
       } catch {
@@ -158,7 +158,10 @@ server.on("upgrade", (req, socket, head) => {
       }
       if (msg.t === "join") r.join(conn.player);
       else if (msg.t === "leave") r.leave(conn.player);
-      else if (msg.t === "progress") r.progress(conn.player, msg.n as number, msg.errors as number);
+      else if (msg.t === "ready") r.ready(conn.player);
+      else if (msg.t === "mode") r.setMode(msg.mode);
+      else if (msg.t === "progress")
+        r.progress(conn.player, msg.n as number, msg.errors as number, msg.miss);
       else if (msg.t === "name") {
         const name = cleanName(msg.name);
         if (!name) return;

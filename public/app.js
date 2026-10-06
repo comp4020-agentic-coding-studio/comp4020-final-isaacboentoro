@@ -7,17 +7,29 @@ const me = window.ME;
 
 const el = {
   phase: $("phase"),
+  modes: [...document.querySelectorAll(".mode")],
+  modeNote: $("mode-note"),
   lanes: $("lanes"),
+  banner: $("banner"),
   passage: $("passage"),
   source: $("source"),
   input: $("input"),
   join: $("join"),
+  ready: $("ready"),
   live: $("me-live"),
   nameForm: $("name-form"),
   name: $("name"),
   history: $("history"),
   today: $("today"),
   allTime: $("all-time"),
+  summary: $("summary"),
+  summaryMeta: $("summary-meta"),
+  chart: $("chart"),
+  legend: $("legend"),
+  results: $("results"),
+  whoTabs: $("who-tabs"),
+  replay: $("replay"),
+  replayNote: $("replay-note"),
 };
 
 let ws;
@@ -25,6 +37,8 @@ let state = null; // latest room snapshot
 let skew = 0; // server clock minus ours
 let typed = "";
 let errors = 0;
+let summary = null; // the last race, as the server summed it up
+let replayOf = me.id; // whose typing the summary shows
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -33,6 +47,7 @@ function connect() {
     const msg = JSON.parse(ev.data);
     if (msg.t === "state") onState(msg.room);
     if (msg.t === "board") onBoard(msg);
+    if (msg.t === "summary") onSummary(msg.race);
   };
   ws.onclose = () => {
     el.phase.textContent = "Lost the connection. Reconnecting…";
@@ -61,23 +76,69 @@ function mine() {
   return state?.entrants.find((e) => e.id === me.id);
 }
 
+const queued = () => !!state?.queued.includes(me.id);
+const secondsLeft = () => Math.max(0, Math.ceil((state.endsAt - (Date.now() + skew)) / 1000));
+
+// One colour per racer, the same in the lanes, the carets and the summary:
+// yours is the accent, everyone else takes the next slot in join order.
+const SLOTS = 7;
+function colours(entrants) {
+  const map = new Map();
+  let k = 0;
+  for (const e of entrants) map.set(e.id, e.id === me.id ? "var(--accent)" : `var(--p${(k++ % SLOTS) + 1})`);
+  return map;
+}
+
+// Newlines are drawn as a return arrow so you can see you owe a keystroke.
+function charSpan(ch) {
+  const span = document.createElement("span");
+  span.textContent = ch === "\n" ? "↵\n" : ch;
+  if (ch === "\n") span.classList.add("nl");
+  return span;
+}
+
 function render() {
   if (!state) return;
   const entrant = mine();
   const text = state.quote.text;
+  const racing = state.phase === "racing";
+  const colour = colours(state.entrants);
+
+  // Everyone else's caret, where they've typed up to.
+  const others = new Map();
+  if (racing || state.phase === "results") {
+    for (const e of state.entrants) {
+      if (e.id === me.id || e.finished) continue;
+      others.set(e.progress, [...(others.get(e.progress) ?? []), e]);
+    }
+  }
 
   // passage: what you've typed, coloured against what you should have
+  el.passage.classList.toggle("code", state.mode === "code");
   const frag = document.createDocumentFragment();
   for (let i = 0; i < text.length; i++) {
-    const span = document.createElement("span");
-    span.textContent = text[i];
-    if (i < typed.length) span.className = typed[i] === text[i] ? "ok" : "bad";
-    if (i === typed.length && state.phase === "racing" && entrant && !entrant.finished)
-      span.classList.add("caret");
+    const span = charSpan(text[i]);
+    if (i < typed.length) span.classList.add(typed[i] === text[i] ? "ok" : "bad");
+    if (i === typed.length && racing && entrant && !entrant.finished) span.classList.add("caret");
+    const here = others.get(i);
+    if (here) {
+      span.classList.add("ghost");
+      span.style.setProperty("--c", colour.get(here[0].id));
+      span.dataset.name = here.map((e) => e.name).join(", ");
+    }
     frag.append(span);
   }
   el.passage.replaceChildren(frag);
   el.source.textContent = `— ${state.quote.source}`;
+
+  // modes
+  const canJoin = state.phase === "lobby" || state.phase === "countdown";
+  for (const b of el.modes) {
+    b.setAttribute("aria-checked", String(b.dataset.mode === state.mode));
+    b.disabled = !canJoin;
+  }
+  el.modeNote.textContent = canJoin ? "Switches the passage for everyone here." : "";
+  el.input.rows = state.mode === "code" ? 5 : 2;
 
   // lanes
   const lanes = state.entrants
@@ -87,14 +148,17 @@ function render() {
     ...lanes.map((e) => {
       const li = document.createElement("li");
       if (e.id === me.id) li.className = "me";
+      li.style.setProperty("--c", colour.get(e.id));
       const pct = Math.round((e.progress / text.length) * 100);
       li.innerHTML = `<span class="who"></span><span class="bar"><span style="width:${pct}%"></span></span><span class="num"></span>`;
       li.querySelector(".who").textContent = e.name + (e.id === me.id ? " (you)" : "");
       li.querySelector(".num").textContent = e.finished
         ? `${ordinal(e.place)} · ${Math.round(e.wpm)} wpm`
-        : state.phase === "racing" || state.phase === "results"
+        : racing || state.phase === "results"
           ? `${Math.round(e.wpm)} wpm`
-          : "ready";
+          : e.ready
+            ? "ready ✓"
+            : "joined";
       li.setAttribute("aria-label", `${e.name}: ${pct}% ${li.querySelector(".num").textContent}`);
       return li;
     }),
@@ -107,34 +171,46 @@ function render() {
   }
 
   // controls
-  const canJoin = state.phase === "lobby" || state.phase === "countdown";
-  el.join.disabled = !canJoin;
-  el.join.textContent = entrant && canJoin ? "Leave" : "Join next race";
-  el.join.hidden = state.phase === "racing" && !!entrant;
-  const racing = state.phase === "racing" && entrant && !entrant.finished;
-  // Typing is how you join: the box is live before a race, and the first
-  // keystroke puts you on the line.
-  const canType = canJoin || racing;
+  const results = state.phase === "results";
+  el.join.disabled = !(canJoin || results);
+  el.join.hidden = racing;
+  el.join.textContent =
+    (entrant && canJoin) || (results && queued()) ? "Leave" : "Join next race";
+  el.join.classList.toggle("secondary", !!entrant && canJoin);
+  el.ready.hidden = !(entrant && state.phase === "countdown");
+  el.ready.textContent = entrant?.ready ? "Not ready" : "I'm ready";
+  el.ready.setAttribute("aria-pressed", String(!!entrant?.ready));
+
+  const typing = racing && entrant && !entrant.finished;
+  // Typing is how you join: the box is live before a race (and while the
+  // last one's results are up), and the first keystroke puts you on the line.
+  const canType = canJoin || results || typing;
   if (el.input.disabled === canType) {
     el.input.disabled = !canType;
     // a disabled box drops focus; take it back unless you've moved elsewhere
-    if (canType && (document.activeElement === document.body || racing)) el.input.focus();
+    if (canType && (document.activeElement === document.body || typing)) el.input.focus();
   }
-  el.input.placeholder = racing
-    ? "Go!"
+  el.input.placeholder = typing
+    ? state.mode === "code"
+      ? "Go! Enter for newlines; indents are typed for you."
+      : "Go!"
     : entrant && canJoin
-      ? "Get ready…"
-      : canJoin
+      ? entrant.ready
+        ? "Ready. Waiting on the others…"
+        : "Press Enter when you're ready"
+      : canJoin || (results && !queued())
         ? "Start typing to join the next race"
-        : state.phase === "racing"
-          ? entrant
+        : results
+          ? "You're in the next race"
+          : entrant
             ? "Done! Waiting for the others…"
-            : "Race under way. Join the next one when it ends."
-          : "Next race soon…";
+            : "Race under way. Join the next one when it ends.";
 
-  el.live.textContent = entrant && (state.phase === "racing" || state.phase === "results")
+  el.live.textContent = entrant && (racing || results)
     ? `${Math.round(entrant.wpm)} wpm · ${accuracyPct()}%`
     : "";
+
+  el.summary.hidden = !summary || racing;
   tick();
 }
 
@@ -143,9 +219,10 @@ function accuracyPct() {
   return good + errors === 0 ? 100 : Math.round((good / (good + errors)) * 100);
 }
 
+// The phase line and the banner both count down, so they redraw every second.
 function tick() {
   if (!state) return;
-  const left = Math.max(0, Math.ceil((state.endsAt - (Date.now() + skew)) / 1000));
+  const left = secondsLeft();
   const watching = state.watching === 1 ? "just you here" : `${state.watching} here`;
   const n = state.entrants.length;
   el.phase.textContent = {
@@ -154,10 +231,54 @@ function tick() {
     racing: `Racing · ${left}s left · ${watching}`,
     results: `Finished · next race in ${left}s`,
   }[state.phase];
+  renderBanner(left);
 }
 // The phase line only re-announces when its text changes, so ticking every
 // second is fine for screen readers during the countdown.
 setInterval(tick, 1000);
+
+// The big "what happens next" strip above the passage.
+function renderBanner(left) {
+  const entrant = mine();
+  const ready = state.entrants.filter((e) => e.ready).length;
+  let big = "";
+  let line = "";
+  let tone = "";
+  if (state.phase === "lobby") {
+    big = "▶";
+    line = "<b>Start typing to start a race.</b> Anyone else here gets 10 seconds to jump in.";
+  } else if (state.phase === "countdown") {
+    big = String(left);
+    tone = left <= 3 ? "hot" : "";
+    line = entrant
+      ? entrant.ready
+        ? `<b>You're ready.</b> ${ready} of ${state.entrants.length} ready — it starts early once everyone is.`
+        : `<b>You're in.</b> Press <kbd>Enter</kbd> when you're ready to go.`
+      : "<b>A race is about to start.</b> Start typing to join it.";
+  } else if (state.phase === "racing") {
+    const elapsed = Date.now() + skew - state.startedAt;
+    if (entrant && !entrant.finished && elapsed < 1500) {
+      big = "Go!";
+      tone = "hot";
+      line = "<b>Type the passage below.</b>";
+    } else if (!entrant) {
+      big = "👀";
+      line = "<b>You're watching this one.</b> You can join the next race when it ends.";
+    } else if (entrant.finished) {
+      big = ordinal(entrant.place);
+      line = `<b>Finished!</b> Waiting for the others…`;
+    }
+  } else if (state.phase === "results") {
+    big = String(left);
+    line = queued()
+      ? "<b>You're in the next race.</b> It counts down as soon as these results clear."
+      : "<b>Race over.</b> Start typing to get in the next one.";
+  }
+  el.banner.hidden = !big;
+  el.banner.className = `banner ${tone}`;
+  el.banner.innerHTML = big ? `<span class="big"></span><span class="line">${line}</span>` : "";
+  if (big) el.banner.querySelector(".big").textContent = big;
+}
 
 function correctPrefix() {
   const text = state.quote.text;
@@ -166,28 +287,57 @@ function correctPrefix() {
   return i;
 }
 
+function joinOrQueue() {
+  if (state.phase === "results") {
+    if (!queued()) send({ t: "join" });
+  } else if (!mine()) send({ t: "join" });
+}
+
+el.input.addEventListener("keydown", (e) => {
+  if (!state) return;
+  if (e.key === "Enter" && state.phase !== "racing") {
+    // Before the start, Enter joins, then says you're ready.
+    e.preventDefault();
+    if (state.phase === "countdown" && mine()) send({ t: "ready" });
+    else joinOrQueue();
+  } else if (e.key === "Enter" && state.mode !== "code") {
+    e.preventDefault();
+  } else if (e.key === "Tab" && state.phase === "racing" && mine() && !mine().finished) {
+    // indentation is typed for you; Tab would only throw you out of the box
+    e.preventDefault();
+  }
+});
+
 el.input.addEventListener("input", () => {
   if (!state) return;
-  if (state.phase === "lobby" || state.phase === "countdown") {
+  if (state.phase !== "racing") {
     // Before the start, keystrokes join you and are otherwise swallowed.
     el.input.value = "";
-    if (!mine()) send({ t: "join" });
+    joinOrQueue();
     return;
   }
-  if (state.phase !== "racing") return;
   const text = state.quote.text;
   let next = el.input.value;
-  // You can run at most a word past your first mistake; fix it to go on.
-  const good = (() => {
+  const prefix = (s) => {
     let i = 0;
-    while (i < next.length && next[i] === text[i]) i++;
+    while (i < s.length && s[i] === text[i]) i++;
     return i;
-  })();
+  };
+  // You can run at most a word past your first mistake; fix it to go on.
+  let good = prefix(next);
   if (next.length > good + 8) next = next.slice(0, good + 8);
-  if (next.length > typed.length && next[next.length - 1] !== text[next.length - 1]) errors++;
+  let miss;
+  if (next.length > typed.length && next[next.length - 1] !== text[next.length - 1]) {
+    errors++;
+    miss = { i: next.length - 1, got: next[next.length - 1] };
+  }
+  // After a correct newline the next line's indent comes for free.
+  if (next.length > typed.length && good === next.length && next.endsWith("\n")) {
+    while (text[next.length] === " ") next += " ";
+  }
   typed = next;
   if (el.input.value !== typed) el.input.value = typed;
-  send({ t: "progress", n: correctPrefix(), errors });
+  send({ t: "progress", n: correctPrefix(), errors, miss });
   render();
 });
 
@@ -198,8 +348,17 @@ el.input.addEventListener("drop", (e) => e.preventDefault());
 el.passage.addEventListener("click", () => el.input.disabled || el.input.focus());
 
 el.join.addEventListener("click", () => {
-  send({ t: mine() ? "leave" : "join" });
+  if (state.phase === "results") send({ t: queued() ? "leave" : "join" });
+  else send({ t: mine() ? "leave" : "join" });
+  el.input.focus();
 });
+
+el.ready.addEventListener("click", () => {
+  send({ t: "ready" });
+  el.input.focus();
+});
+
+for (const b of el.modes) b.addEventListener("click", () => send({ t: "mode", mode: b.dataset.mode }));
 
 el.nameForm.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -216,6 +375,250 @@ function onBoard({ today, allTime, history }) {
   el.history.replaceChildren(historyList(history));
 }
 
+// --- the post-race summary ---------------------------------------------------
+
+function onSummary(race) {
+  summary = race;
+  if (!race.entrants.some((e) => e.id === replayOf)) replayOf = race.entrants[0]?.id;
+  render(); // unhides the summary, so the chart can measure its width
+  renderSummary();
+}
+
+const byPlace = (a, b) => (a.place ?? 99) - (b.place ?? 99) || b.progress - a.progress;
+const pct = (x) => `${Math.round(x * 100)}%`;
+const visible = (ch) => (ch === " " ? "␣" : ch === "\n" ? "↵" : ch);
+
+function renderSummary() {
+  const race = summary;
+  const colour = colours(race.entrants);
+  el.summaryMeta.textContent = `${race.mode} · ${race.source} · ${race.seconds}s`;
+
+  // results table
+  el.results.replaceChildren(
+    ...race.entrants
+      .slice()
+      .sort(byPlace)
+      .map((e) => {
+        const tr = document.createElement("tr");
+        if (e.id === me.id) tr.className = "me";
+        const cells = [
+          e.place ? ordinal(e.place) : "DNF",
+          e.name + (e.id === me.id ? " (you)" : ""),
+          Math.round(e.wpm),
+          pct(e.accuracy),
+          e.misses.length,
+        ];
+        for (const [k, v] of cells.entries()) {
+          const td = document.createElement(k === 1 ? "th" : "td");
+          if (k === 1) {
+            td.scope = "row";
+            const sw = document.createElement("span");
+            sw.className = "swatch";
+            sw.style.background = colour.get(e.id);
+            td.append(sw);
+          }
+          td.append(String(v));
+          tr.append(td);
+        }
+        return tr;
+      }),
+  );
+
+  // whose typing to look at
+  el.whoTabs.replaceChildren(
+    ...race.entrants.map((e) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.role = "tab";
+      b.className = "who-tab";
+      b.style.setProperty("--c", colour.get(e.id));
+      b.setAttribute("aria-selected", String(e.id === replayOf));
+      b.textContent = e.id === me.id ? "You" : e.name;
+      b.addEventListener("click", () => {
+        replayOf = e.id;
+        renderSummary();
+      });
+      return b;
+    }),
+  );
+  renderReplay(race.entrants.find((e) => e.id === replayOf));
+  renderChart(race, colour);
+}
+
+// The passage as one racer typed it: every character they got wrong on the
+// way is red, with what they hit instead written underneath.
+function renderReplay(e) {
+  if (!e) return el.replay.replaceChildren();
+  const text = summary.text;
+  const missed = new Map();
+  for (const m of e.misses) missed.set(m.i, [...(missed.get(m.i) ?? []), m.got]);
+  el.replay.classList.toggle("code", summary.mode === "code");
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < text.length; i++) {
+    const span = charSpan(text[i]);
+    span.classList.add(i < e.progress ? "ok" : "untyped");
+    const got = missed.get(i);
+    if (got) {
+      span.classList.add("missed");
+      const sub = document.createElement("span");
+      sub.className = "got";
+      sub.textContent = [...new Set(got)].slice(0, 3).map(visible).join("");
+      span.title = `typed ${got.map(visible).join(", ")}`;
+      span.append(sub);
+    }
+    frag.append(span);
+  }
+  el.replay.replaceChildren(frag);
+
+  const counts = new Map();
+  for (const m of e.misses) {
+    const want = visible(text[m.i]);
+    counts.set(want, (counts.get(want) ?? 0) + 1);
+  }
+  const worst = [...counts].sort((a, b) => b[1] - a[1])[0];
+  const who = e.id === me.id ? "You" : e.name;
+  el.replayNote.textContent = [
+    e.misses.length === 0
+      ? `${who} made no mistakes.`
+      : `${who} made ${e.misses.length} mistake${e.misses.length === 1 ? "" : "s"}${worst && worst[1] > 1 ? `, most often on “${worst[0]}”` : ""}.`,
+    e.place ? "" : `Didn't finish: got ${pct(e.progress / text.length)} of the way.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+const SVG = "http://www.w3.org/2000/svg";
+function svg(tag, attrs = {}) {
+  const n = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+
+// Each racer's average WPM, second by second, on one shared axis.
+// Drawn at the width it's shown, so its text stays readable on a phone.
+function renderChart(race, colour) {
+  const W = Math.max(300, el.chart.clientWidth || 640);
+  const H = 240;
+  const m = { l: 36, r: W < 500 ? 70 : 110, t: 12, b: 28 };
+  const lines = race.entrants.filter((e) => e.series.length > 0);
+  const maxT = Math.max(1, ...lines.map((e) => e.series.at(-1)[0]));
+  const top = Math.max(20, ...lines.flatMap((e) => e.series.map((p) => p[1])));
+  const step = top > 150 ? 50 : top > 60 ? 20 : 10;
+  const maxY = Math.ceil(top / step) * step;
+  const x = (t) => m.l + (t / maxT) * (W - m.l - m.r);
+  const y = (v) => H - m.b - (v / maxY) * (H - m.t - m.b);
+
+  const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  root.setAttribute(
+    "aria-label",
+    `WPM over time: ${lines.map((e) => `${e.name} ended at ${Math.round(e.series.at(-1)[1])}`).join(", ")}`,
+  );
+  for (let v = 0; v <= maxY; v += step) {
+    root.append(svg("line", { class: "grid", x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }));
+    const t = svg("text", { class: "tick", x: m.l - 6, y: y(v) + 4, "text-anchor": "end" });
+    t.textContent = v;
+    root.append(t);
+  }
+  const tStep = maxT > 60 ? 15 : maxT > 20 ? 5 : maxT > 8 ? 2 : 1;
+  for (let s = 0; s <= maxT; s += tStep) {
+    const t = svg("text", { class: "tick", x: x(s), y: H - m.b + 16, "text-anchor": "middle" });
+    t.textContent = `${s}s`;
+    root.append(t);
+  }
+
+  // value at time t on a racer's line, for mistake markers and the crosshair
+  const at = (series, t) => {
+    let prev = [0, series[0][1]];
+    for (const p of series) {
+      if (p[0] >= t) {
+        const f = p[0] === prev[0] ? 1 : (t - prev[0]) / (p[0] - prev[0]);
+        return prev[1] + f * (p[1] - prev[1]);
+      }
+      prev = p;
+    }
+    return prev[1];
+  };
+
+  const labels = [];
+  for (const e of lines) {
+    const c = colour.get(e.id);
+    const d = e.series.map((p, k) => `${k ? "L" : "M"}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+    root.append(svg("path", { class: "series", d, style: `stroke:${c}` }));
+    for (const mi of e.misses) {
+      const t = mi.t / 1000;
+      if (t < e.series[0][0]) continue;
+      const cx = x(t);
+      const cy = y(at(e.series, t));
+      root.append(
+        svg("path", { class: "miss", d: `M${cx - 4},${cy - 4}L${cx + 4},${cy + 4}M${cx - 4},${cy + 4}L${cx + 4},${cy - 4}`, style: `stroke:${c}` }),
+      );
+    }
+    const end = e.series.at(-1);
+    labels.push({ e, c, x: x(end[0]), y: y(end[1]) });
+  }
+  // direct labels at each line's end, nudged apart so they don't collide
+  if (lines.length <= 4) {
+    labels.sort((a, b) => a.y - b.y);
+    for (let k = 1; k < labels.length; k++) labels[k].y = Math.max(labels[k].y, labels[k - 1].y + 14);
+    for (const l of labels) {
+      root.append(svg("circle", { cx: l.x, cy: y(l.e.series.at(-1)[1]), r: 4, class: "end", style: `fill:${l.c}` }));
+      const t = svg("text", { class: "label", x: l.x + 8, y: l.y + 4 });
+      const name = l.e.id === me.id ? "you" : l.e.name;
+      const room = W < 500 ? 6 : 10;
+      t.textContent = `${name.length > room ? name.slice(0, room - 1) + "…" : name} ${Math.round(l.e.series.at(-1)[1])}`;
+      root.append(t);
+    }
+  }
+
+  // hover: a crosshair and everyone's WPM at that moment
+  const cross = svg("line", { class: "cross", y1: m.t, y2: H - m.b, visibility: "hidden" });
+  root.append(cross);
+  const hit = svg("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" });
+  root.append(hit);
+  const tip = document.createElement("div");
+  tip.className = "tip";
+  tip.hidden = true;
+  hit.addEventListener("pointermove", (ev) => {
+    const box = root.getBoundingClientRect();
+    const px = ((ev.clientX - box.left) / box.width) * W;
+    const t = Math.max(0, Math.min(maxT, ((px - m.l) / (W - m.l - m.r)) * maxT));
+    cross.setAttribute("x1", x(t));
+    cross.setAttribute("x2", x(t));
+    cross.setAttribute("visibility", "visible");
+    tip.replaceChildren(`${t.toFixed(1)}s`);
+    for (const e of lines) {
+      if (t > e.series.at(-1)[0] + 0.5) continue;
+      const row = document.createElement("div");
+      const sw = document.createElement("span");
+      sw.className = "swatch";
+      sw.style.background = colour.get(e.id);
+      row.append(sw, `${e.id === me.id ? "you" : e.name}: ${Math.round(at(e.series, t))} wpm`);
+      tip.append(row);
+    }
+    tip.hidden = false;
+    const left = (x(t) / W) * box.width;
+    tip.style.left = `${Math.min(left + 12, box.width - tip.offsetWidth)}px`;
+  });
+  hit.addEventListener("pointerleave", () => {
+    cross.setAttribute("visibility", "hidden");
+    tip.hidden = true;
+  });
+  el.chart.replaceChildren(root, tip);
+
+  el.legend.replaceChildren(
+    ...race.entrants.map((e) => {
+      const li = document.createElement("li");
+      const sw = document.createElement("span");
+      sw.className = "swatch";
+      sw.style.background = colour.get(e.id);
+      li.append(sw, e.id === me.id ? "you" : e.name);
+      return li;
+    }),
+  );
+}
+
+// --- sidebar -------------------------------------------------------------------
+
 function boardList(rows) {
   if (rows.length === 0) return para("No finished races yet.");
   const ol = document.createElement("ol");
@@ -231,7 +634,8 @@ function historyList(rows) {
   for (const r of rows)
     ol.append(
       row(
-        r.place ? `${ordinal(r.place)} of ${r.field}` : "DNF",
+        (r.place ? `${ordinal(r.place)} of ${r.field}` : "DNF") +
+          (r.mode === "quotes" ? "" : ` · ${r.mode}`),
         `${Math.round(r.wpm)} wpm · ${Math.round(r.accuracy * 100)}%`,
       ),
     );

@@ -33,6 +33,12 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS results_player ON results(player_id);
 `);
 
+// Races from before modes existed were all quotes.
+const raceCols = db.prepare("PRAGMA table_info(races)").all() as { name: string }[];
+if (!raceCols.some((c) => c.name === "mode")) {
+  db.exec("ALTER TABLE races ADD COLUMN mode TEXT NOT NULL DEFAULT 'quotes'");
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -64,6 +70,7 @@ export interface Result {
 
 export function saveRace(
   room: string,
+  mode: string,
   quoteId: number,
   startedAt: number,
   results: Result[],
@@ -72,9 +79,9 @@ export function saveRace(
   try {
     const { lastInsertRowid } = db
       .prepare(
-        "INSERT INTO races (room, quote_id, started_at, finished_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO races (room, mode, quote_id, started_at, finished_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run(room, quoteId, startedAt, Date.now());
+      .run(room, mode, quoteId, startedAt, Date.now());
     const insert = db.prepare(
       "INSERT INTO results (race_id, player_id, place, wpm, accuracy) VALUES (?, ?, ?, ?, ?)",
     );
@@ -112,6 +119,7 @@ export function leaderboard(since = 0, limit = 10): Best[] {
 
 export interface HistoryRow {
   raceId: number;
+  mode: string;
   finishedAt: number;
   place: number | null;
   field: number;
@@ -122,7 +130,7 @@ export interface HistoryRow {
 export function history(playerId: string, limit = 10): HistoryRow[] {
   return db
     .prepare(
-      `SELECT ra.id AS raceId, ra.finished_at AS finishedAt, r.place, r.wpm, r.accuracy,
+      `SELECT ra.id AS raceId, ra.mode, ra.finished_at AS finishedAt, r.place, r.wpm, r.accuracy,
               (SELECT COUNT(*) FROM results x WHERE x.race_id = ra.id) AS field
          FROM results r JOIN races ra ON ra.id = r.race_id
         WHERE r.player_id = ?
