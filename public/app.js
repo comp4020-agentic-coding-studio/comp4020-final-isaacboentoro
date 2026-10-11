@@ -177,6 +177,7 @@ function render() {
   el.join.textContent =
     (entrant && canJoin) || (results && queued()) ? "Leave" : "Join next race";
   el.join.classList.toggle("secondary", !!entrant && canJoin);
+  el.join.classList.toggle("beckon", state.phase === "lobby" && !entrant);
   el.ready.hidden = !(entrant && state.phase === "countdown");
   el.ready.textContent = entrant?.ready ? "Not ready" : "I'm ready";
   el.ready.setAttribute("aria-pressed", String(!!entrant?.ready));
@@ -274,10 +275,24 @@ function renderBanner(left) {
       ? "<b>You're in the next race.</b> It counts down as soon as these results clear."
       : "<b>Race over.</b> Start typing to get in the next one.";
   }
+  // Draws the eye while there's a one-keystroke action waiting: joining a
+  // race, or readying up once you're on the line.
+  const beckon =
+    (state.phase === "lobby" && !entrant) ||
+    (state.phase === "countdown" && entrant && !entrant.ready);
   el.banner.hidden = !big;
-  el.banner.className = `banner ${tone}`;
+  el.banner.className = `banner ${tone} ${beckon ? "beckon" : ""}`;
   el.banner.innerHTML = big ? `<span class="big"></span><span class="line">${line}</span>` : "";
   if (big) el.banner.querySelector(".big").textContent = big;
+}
+
+// The end of the word sitting at `from` in the passage, one past its closing
+// space or newline (or the end of the passage), so a mistake never locks you
+// out mid-word but also never lets you run past the one you're stuck on.
+function wordLimit(text, from) {
+  let i = from;
+  while (i < text.length && text[i] !== " " && text[i] !== "\n") i++;
+  return Math.min(text.length, i + 1);
 }
 
 function correctPrefix() {
@@ -323,9 +338,10 @@ el.input.addEventListener("input", () => {
     while (i < s.length && s[i] === text[i]) i++;
     return i;
   };
-  // You can run at most a word past your first mistake; fix it to go on.
+  // You can run to the end of the current word past your first mistake, but
+  // no further into the next one; fix it to go on.
   let good = prefix(next);
-  if (next.length > good + 8) next = next.slice(0, good + 8);
+  if (next.length > wordLimit(text, good)) next = next.slice(0, wordLimit(text, good));
   let miss;
   if (next.length > typed.length && next[next.length - 1] !== text[next.length - 1]) {
     errors++;

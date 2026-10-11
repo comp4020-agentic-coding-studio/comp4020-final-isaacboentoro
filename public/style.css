@@ -104,9 +104,17 @@ h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; colo
 .passage .bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 20%, transparent); }
 .passage .caret { box-shadow: inset 2px 0 0 var(--accent); animation: blink 1s step-end infinite; }
 @keyframes blink { 50% { box-shadow: none; } }
-/* someone else's caret, with their name over it */
-.passage .ghost { position: relative; box-shadow: inset 2px 0 0 var(--c); }
-.passage .ghost.caret { box-shadow: inset 2px 0 0 var(--accent), inset 4px 0 0 var(--c); }
+/* someone else's caret: a coloured bar, their name pinned above it, and a
+   soft tint on the character itself so it reads at a glance, not on hover */
+.passage .ghost {
+  position: relative;
+  box-shadow: inset 3px 0 0 var(--c);
+  background: color-mix(in srgb, var(--c) 18%, transparent);
+  border-radius: 2px;
+  animation: ghost-blink 1s step-end infinite;
+}
+.passage .ghost.caret { box-shadow: inset 3px 0 0 var(--accent), inset 5px 0 0 var(--c); }
+@keyframes ghost-blink { 50% { box-shadow: none; background: transparent; } }
 .passage .ghost::before {
   content: attr(data-name);
   position: absolute;
@@ -114,17 +122,17 @@ h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; colo
   bottom: 100%;
   margin-bottom: -0.35em;
   padding: 0 0.3em;
-  font: 600 0.55rem/1.4 system-ui, sans-serif;
+  font: 600 0.6rem/1.5 system-ui, sans-serif;
   color: var(--bg);
   background: var(--c);
   border-radius: 3px 3px 3px 0;
   white-space: nowrap;
   pointer-events: none;
-  opacity: 0.9;
 }
 @media (prefers-reduced-motion: reduce) {
-  .passage .caret { animation: none; }
+  .passage .caret, .passage .ghost { animation: none; }
   .bar span { transition: none; }
+  .banner.beckon { animation: none; }
 }
 .source { color: var(--dim); font-size: 0.9rem; margin: 0.5rem 0 1rem; }
 
@@ -163,6 +171,10 @@ h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; colo
   border-radius: 6px;
 }
 .banner[hidden] { display: none; }
+.banner.beckon { animation: beckon 1.6s ease-in-out infinite; }
+@keyframes beckon {
+  50% { border-left-color: var(--text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+}
 .banner .big {
   font: 700 2.25rem/1 var(--mono);
   color: var(--accent);
@@ -195,6 +207,11 @@ button {
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 button[hidden] { display: none; }
 button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+button.beckon { animation: beckon-btn 1.6s ease-in-out infinite; }
+@keyframes beckon-btn {
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { button.beckon { animation: none; } }
 #ready { background: var(--accent); color: #1d1f21; border: 0; }
 #ready[aria-pressed="true"] { background: transparent; color: var(--text); border: 1px solid var(--line); }
 
