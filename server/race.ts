@@ -1,6 +1,6 @@
 import type { WebSocket } from "ws";
 import { history, leaderboard, saveRace, type Player } from "./db.ts";
-import { isMode, randomPassage, type Mode } from "./passages.ts";
+import { isMode, randomPassage, SPRINT_MS, type Mode } from "./passages.ts";
 import type { Quote } from "./quotes.ts";
 
 // How long each phase lasts. The countdown starts when the first racer joins,
@@ -224,12 +224,26 @@ export class Room {
 
   private start(): void {
     this.startedAt = Date.now();
-    this.setPhase("racing", RACE_LIMIT_MS, () => this.finish());
+    const limit = this.mode === "sprint" ? SPRINT_MS : RACE_LIMIT_MS;
+    this.setPhase("racing", limit, () => this.finish());
     this.broadcast();
   }
 
   private finish(): void {
     const end = Date.now();
+    // A sprint never resolves by finish order — its passage outlasts the
+    // clock on purpose — so rank everyone by WPM (accuracy breaks a tie) the
+    // instant time runs out, instead of leaving them all a DNF.
+    if (this.mode === "sprint") {
+      const ranked = [...this.entrants.values()].sort((a, b) => {
+        const diff = wpm(b.progress, end - this.startedAt) - wpm(a.progress, end - this.startedAt);
+        return diff !== 0 ? diff : accuracy(b.progress, b.errors) - accuracy(a.progress, a.errors);
+      });
+      ranked.forEach((e, k) => {
+        e.place = k + 1;
+        e.finishedAt ??= end;
+      });
+    }
     const results = [...this.entrants.values()].map((e) => ({
       playerId: e.id,
       place: e.place,

@@ -1,11 +1,17 @@
 import { quotes, randomQuote, type Quote } from "./quotes.ts";
 
 // What a race can be run on. Quotes are the default; words drops capitals and
-// punctuation for pure speed; code adds symbols, newlines and indentation.
-export const MODES = ["quotes", "words", "code"] as const;
+// punctuation for pure speed; code adds symbols, newlines and indentation;
+// sprint is words again, but an open-ended stream run against a clock instead
+// of a fixed passage, so the race is won on WPM rather than on finishing.
+export const MODES = ["quotes", "words", "code", "sprint"] as const;
 export type Mode = (typeof MODES)[number];
 
 export const isMode = (m: unknown): m is Mode => MODES.includes(m as Mode);
+
+// How long a sprint runs. Nobody can reach the end of its word list in this
+// long at the server's own typing-speed cap, so it always ends on the clock.
+export const SPRINT_MS = 30_000;
 
 // Common English words, lowercase letters only.
 const WORDS = `the of and to in is you that it he was for on are as with his they at be
@@ -25,13 +31,18 @@ next hard open example begin life always those both paper together got group oft
 
 export const WORD_COUNT = 30;
 
-function randomWords(): Quote {
+// A sprint's word list has to outlast the fastest possible typist: at the
+// server's MAX_CPS cap that's 25 * (SPRINT_MS / 1000) characters, and this is
+// sized with room to spare over that.
+const SPRINT_WORD_COUNT = 250;
+
+function randomWords(count: number): string[] {
   const picked: string[] = [];
-  while (picked.length < WORD_COUNT) {
+  while (picked.length < count) {
     const w = WORDS[Math.floor(Math.random() * WORDS.length)];
     if (w !== picked[picked.length - 1]) picked.push(w);
   }
-  return { id: -1, text: picked.join(" "), source: `${WORD_COUNT} random words` };
+  return picked;
 }
 
 // Short, self-contained snippets. Two-space indents, no tabs and no trailing
@@ -113,7 +124,13 @@ quicksort (p:xs) = quicksort [x | x <- xs, x < p]
 ].map((q, id) => ({ id: id + quotes.length, ...q }));
 
 export function randomPassage(mode: Mode, exclude?: number): Quote {
-  if (mode === "words") return randomWords();
+  if (mode === "words") return { id: -1, text: randomWords(WORD_COUNT).join(" "), source: `${WORD_COUNT} random words` };
+  if (mode === "sprint")
+    return {
+      id: -2,
+      text: randomWords(SPRINT_WORD_COUNT).join(" "),
+      source: `${SPRINT_MS / 1000}s sprint · highest wpm wins`,
+    };
   if (mode === "code") {
     const pool = snippets.filter((q) => q.id !== exclude);
     return pool[Math.floor(Math.random() * pool.length)];

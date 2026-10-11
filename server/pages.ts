@@ -72,6 +72,7 @@ export function roomPage(
       <button type="button" class="mode" role="radio" data-mode="quotes" aria-checked="true">Quotes</button>
       <button type="button" class="mode" role="radio" data-mode="words" aria-checked="false">Words</button>
       <button type="button" class="mode" role="radio" data-mode="code" aria-checked="false">Code</button>
+      <button type="button" class="mode" role="radio" data-mode="sprint" aria-checked="false">Sprint (30s)</button>
       <span id="mode-note" class="mode-note"></span>
     </div>
     <ul id="lanes" class="lanes" aria-label="Racers"></ul>

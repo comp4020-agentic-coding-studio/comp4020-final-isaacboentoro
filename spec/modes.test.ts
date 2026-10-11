@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { SPRINT_MS } from "../server/passages.ts";
 import { racer, visitor } from "./racer.ts";
 
 const freshRoom = () => `spec-${Math.random().toString(36).slice(2, 10)}`;
@@ -87,4 +88,47 @@ it(
     c.ws.close();
   },
   40_000,
+);
+
+it(
+  "ends a sprint on the clock and ranks everyone by wpm instead of finish order",
+  async () => {
+    const room = freshRoom();
+    const [a, b] = await Promise.all([0, 1].map(async () => racer(await visitor(), room)));
+    await Promise.all([a.opened, b.opened]);
+    a.send({ t: "mode", mode: "sprint" });
+    const sprint = await a.until((s) => s.mode === "sprint", 1000);
+    // A sprint's passage has to outlast the clock, not end like a normal race.
+    expect(sprint.quote.text.length).toBeGreaterThan(500);
+
+    a.send({ t: "join" });
+    b.send({ t: "join" });
+    await a.until((s) => s.entrants.length === 2, 1000);
+    a.send({ t: "ready" });
+    b.send({ t: "ready" });
+    const started = await a.until((s) => s.phase === "racing", 4500);
+    const text = started.quote.text;
+
+    // A types faster than B, and neither comes close to the end of the text.
+    for (let n = 4; n < 200; n += 4) {
+      a.send({ t: "progress", n, errors: 0 });
+      if (n % 8 === 0) b.send({ t: "progress", n: n / 2, errors: 0 });
+      await sleep(200);
+    }
+    const results = await a.until((s) => s.phase === "results", SPRINT_MS);
+    expect(results.entrants.every((e) => e.progress < text.length)).toBe(true);
+
+    await sleep(300);
+    const sum = a.summary!;
+    const [first, second] = sum.entrants
+      .slice()
+      .sort((x, y) => (x.place ?? 99) - (y.place ?? 99));
+    // Nobody finished the passage, but the faster typist still won outright.
+    expect(first.place).toBe(1);
+    expect(second.place).toBe(2);
+    expect(first.wpm).toBeGreaterThan(second.wpm);
+    a.ws.close();
+    b.ws.close();
+  },
+  60_000,
 );

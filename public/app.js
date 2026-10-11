@@ -35,6 +35,12 @@ const el = {
 let ws;
 let state = null; // latest room snapshot
 let skew = 0; // server clock minus ours
+// `committed` is every word you've finished (typed its boundary space or
+// newline, or the passage ended); `typed` is that plus whatever's still in
+// the box for the word in progress. The box itself only ever holds the one
+// word — it's cleared the instant a word commits, so there's never a
+// backlog of the whole passage sitting in it.
+let committed = "";
 let typed = "";
 let errors = 0;
 let summary = null; // the last race, as the server summed it up
@@ -64,6 +70,7 @@ function onState(room) {
   // Typing is locked before the start, so that's when the last race's
   // keystrokes get cleared; results keep them on screen.
   if (room.phase === "lobby" || room.phase === "countdown") {
+    committed = "";
     typed = "";
     errors = 0;
     el.input.value = "";
@@ -295,11 +302,29 @@ function wordLimit(text, from) {
   return Math.min(text.length, i + 1);
 }
 
-function correctPrefix() {
-  const text = state.quote.text;
+// Commits whichever whole words `full` (the passage typed so far, in
+// absolute passage positions) now reaches the end of, as many times as it
+// overruns in one go — an auto-filled indent can close out several
+// one-character "words" at once. Returns the new committed text and
+// whatever's left over for the box, which only ever holds the remainder.
+function commitWords(text, committed, full) {
+  for (;;) {
+    const limit = wordLimit(text, committed.length);
+    if (full.length < limit || limit === committed.length) return [committed, full.slice(committed.length)];
+    committed = full.slice(0, limit);
+  }
+}
+
+// How much of `s` matches the passage from its start, character for
+// character — the portion that counts as correctly typed.
+function prefixLen(s, text) {
   let i = 0;
-  while (i < typed.length && typed[i] === text[i]) i++;
+  while (i < s.length && s[i] === text[i]) i++;
   return i;
+}
+
+function correctPrefix() {
+  return prefixLen(typed, state.quote.text);
 }
 
 function joinOrQueue() {
@@ -332,27 +357,28 @@ el.input.addEventListener("input", () => {
     return;
   }
   const text = state.quote.text;
-  let next = el.input.value;
-  const prefix = (s) => {
-    let i = 0;
-    while (i < s.length && s[i] === text[i]) i++;
-    return i;
-  };
-  // You can run to the end of the current word past your first mistake, but
-  // no further into the next one; fix it to go on.
-  let good = prefix(next);
-  if (next.length > wordLimit(text, good)) next = next.slice(0, wordLimit(text, good));
+  const prevTyped = typed;
+  let full = committed + el.input.value;
+  // The box can only ever hold the word you're on, so cap it at that word's
+  // end; typing past a mistake runs you out, but no further.
+  const limit = wordLimit(text, committed.length);
+  if (full.length > limit) full = full.slice(0, limit);
+
   let miss;
-  if (next.length > typed.length && next[next.length - 1] !== text[next.length - 1]) {
+  if (full.length > prevTyped.length && full[full.length - 1] !== text[full.length - 1]) {
     errors++;
-    miss = { i: next.length - 1, got: next[next.length - 1] };
+    miss = { i: full.length - 1, got: full[full.length - 1] };
   }
-  // After a correct newline the next line's indent comes for free.
-  if (next.length > typed.length && good === next.length && next.endsWith("\n")) {
-    while (text[next.length] === " ") next += " ";
+  // After a correct newline the next line's indent comes for free — each
+  // space it adds closes out its own one-character "word" below.
+  const good = prefixLen(full, text);
+  if (full.length > prevTyped.length && good === full.length && full.endsWith("\n")) {
+    while (text[full.length] === " ") full += " ";
   }
-  typed = next;
-  if (el.input.value !== typed) el.input.value = typed;
+
+  [committed, full] = commitWords(text, committed, full);
+  typed = committed + full;
+  if (el.input.value !== full) el.input.value = full;
   send({ t: "progress", n: correctPrefix(), errors, miss });
   render();
 });

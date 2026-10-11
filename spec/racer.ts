@@ -14,7 +14,7 @@ export interface Entrant {
 }
 export interface RoomState {
   phase: "lobby" | "countdown" | "racing" | "results";
-  mode: "quotes" | "words" | "code";
+  mode: "quotes" | "words" | "code" | "sprint";
   endsAt: number;
   now: number;
   quote: { text: string };
