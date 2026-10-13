@@ -96,8 +96,26 @@ h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; colo
   overflow-wrap: break-word;
   white-space: pre-wrap;
   overflow-x: clip; /* a caret's name tag at a line's end mustn't widen the page */
+  /* however long the passage, it stops well short of the fold: it scrolls
+     (and clips) instead of pushing the typing box off screen */
+  max-height: min(32vh, 15.5lh);
+  overflow-y: auto;
+  scroll-behavior: smooth;
 }
 .passage.code { font-size: 1.15rem; line-height: 1.7; tab-size: 2; }
+
+/* tape mode: one line, the untyped tail clipped rather than wrapped — the
+   caret stays put and the text scrolls under it, letter by letter */
+.passage.tape {
+  max-height: none;
+  overflow: hidden;
+  white-space: pre;
+  display: flex;
+  align-items: center;
+  height: 3.2rem;
+}
+.passage.tape .tape-track { transition: transform 80ms linear; }
+@media (prefers-reduced-motion: reduce) { .passage.tape .tape-track { transition: none; } }
 .passage .nl { opacity: 0.5; }
 @media (max-width: 500px) { .passage { font-size: 1.15rem; } }
 .passage .ok { color: var(--text); }
@@ -159,6 +177,16 @@ h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; colo
 }
 .modes .mode[aria-checked="true"] { color: var(--bg); background: var(--accent); border-color: var(--accent); }
 .mode-note { color: var(--dim); font-size: 0.8rem; margin-left: 0.5rem; }
+.tape-toggle {
+  margin-left: auto;
+  font: 600 0.8rem var(--mono);
+  padding: 0.3rem 0.7rem;
+  background: var(--panel);
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.tape-toggle[aria-pressed="true"] { color: var(--bg); background: var(--c3, var(--accent)); border-color: var(--c3, var(--accent)); }
 
 .banner {
   display: flex;

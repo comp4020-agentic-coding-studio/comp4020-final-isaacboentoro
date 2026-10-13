@@ -12,6 +12,7 @@ const el = {
   lanes: $("lanes"),
   banner: $("banner"),
   passage: $("passage"),
+  tapeToggle: $("tape-toggle"),
   source: $("source"),
   input: $("input"),
   join: $("join"),
@@ -45,6 +46,16 @@ let typed = "";
 let errors = 0;
 let summary = null; // the last race, as the server summed it up
 let replayOf = me.id; // whose typing the summary shows
+
+// Tape mode: one line, scrolled under a fixed caret, letter by letter. A
+// per-browser preference — it changes nothing about the race itself.
+let tape = false;
+try {
+  tape = localStorage.getItem("keyrace-tape") === "1";
+} catch {
+  // storage blocked (private window, locked-down browser): default stands
+}
+el.tapeToggle.setAttribute("aria-pressed", String(tape));
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -97,9 +108,12 @@ function colours(entrants) {
 }
 
 // Newlines are drawn as a return arrow so you can see you owe a keystroke.
-function charSpan(ch) {
+// Tape mode is forced one line (`white-space: pre`), where a literal "\n"
+// would still break it, so there the arrow stands in for the newline rather
+// than alongside it.
+function charSpan(ch, oneLine = false) {
   const span = document.createElement("span");
-  span.textContent = ch === "\n" ? "↵\n" : ch;
+  span.textContent = ch === "\n" ? (oneLine ? "↵" : "↵\n") : ch;
   if (ch === "\n") span.classList.add("nl");
   return span;
 }
@@ -122,20 +136,41 @@ function render() {
 
   // passage: what you've typed, coloured against what you should have
   el.passage.classList.toggle("code", state.mode === "code");
+  el.passage.classList.toggle("tape", tape);
+  const myCaretAt = racing && entrant && !entrant.finished ? typed.length : -1;
   const frag = document.createDocumentFragment();
+  const track = tape ? document.createElement("span") : frag;
+  if (tape) track.className = "tape-track";
   for (let i = 0; i < text.length; i++) {
-    const span = charSpan(text[i]);
+    const span = charSpan(text[i], tape);
     if (i < typed.length) span.classList.add(typed[i] === text[i] ? "ok" : "bad");
-    if (i === typed.length && racing && entrant && !entrant.finished) span.classList.add("caret");
-    const here = others.get(i);
-    if (here) {
-      span.classList.add("ghost");
-      span.style.setProperty("--c", colour.get(here[0].id));
-      span.dataset.name = here.map((e) => e.name).join(", ");
+    if (i === myCaretAt) span.classList.add("caret");
+    // Tape mode shows only your own letter-by-letter position; other
+    // racers' carets would each need their own scroll offset to stay
+    // legible, so they're left to the full passage and the lane bars.
+    if (!tape) {
+      const here = others.get(i);
+      if (here) {
+        span.classList.add("ghost");
+        span.style.setProperty("--c", colour.get(here[0].id));
+        span.dataset.name = here.map((e) => e.name).join(", ");
+      }
     }
-    frag.append(span);
+    track.append(span);
   }
-  el.passage.replaceChildren(frag);
+  if (tape) {
+    frag.append(track);
+    el.passage.replaceChildren(frag);
+    // Scroll so the caret sits a third of the way in: enough runway to read
+    // ahead, with room behind to see what you just typed.
+    const caret = track.children[Math.max(0, myCaretAt)] ?? track.lastElementChild;
+    if (caret) {
+      const offset = caret.offsetLeft - el.passage.clientWidth / 3;
+      track.style.transform = `translateX(${-Math.max(0, offset)}px)`;
+    }
+  } else {
+    el.passage.replaceChildren(frag);
+  }
   el.source.textContent = `— ${state.quote.source}`;
 
   // modes
@@ -401,6 +436,17 @@ el.ready.addEventListener("click", () => {
 });
 
 for (const b of el.modes) b.addEventListener("click", () => send({ t: "mode", mode: b.dataset.mode }));
+
+el.tapeToggle.addEventListener("click", () => {
+  tape = !tape;
+  el.tapeToggle.setAttribute("aria-pressed", String(tape));
+  try {
+    localStorage.setItem("keyrace-tape", tape ? "1" : "0");
+  } catch {
+    // no durable storage here: the toggle still works for this page view
+  }
+  render();
+});
 
 el.nameForm.addEventListener("submit", (e) => {
   e.preventDefault();
