@@ -114,9 +114,56 @@ function colours(entrants) {
 function charSpan(ch, oneLine = false) {
   const span = document.createElement("span");
   span.textContent = ch === "\n" ? (oneLine ? "↵" : "↵\n") : ch;
-  if (ch === "\n") span.classList.add("nl");
+  if (ch === "\n") span.className = "nl";
   return span;
 }
+
+// The passage's character spans are built once per passage (and per layout:
+// tape mode draws newlines differently) and then only restyled. Rebuilding
+// them on every broadcast reset the tape's scroll to zero and slid it back
+// to the caret ten times a second, which made it unreadable.
+let built = { key: "", spans: [] };
+function passageSpans(text) {
+  const key = `${tape}:${text}`;
+  if (built.key === key) return built.spans;
+  const spans = [...text].map((ch) => charSpan(ch, tape));
+  if (tape) {
+    const track = document.createElement("span");
+    track.className = "tape-track";
+    track.append(...spans);
+    el.passage.replaceChildren(track);
+  } else {
+    el.passage.replaceChildren(...spans);
+    el.passage.scrollTop = 0;
+  }
+  built = { key, spans };
+  return spans;
+}
+
+// Keeps the character you're on in view. Tape mode pins it to the middle of
+// the line, so the text moves and your eyes don't; otherwise the passage
+// scrolls a line at a time once the caret nears the bottom of its box.
+function placeCaret(spans, at) {
+  const caret = spans[Math.max(0, at)];
+  if (!caret) return;
+  if (tape) {
+    const centre = caret.offsetLeft + caret.offsetWidth / 2;
+    const shift = Math.round(el.passage.clientWidth / 2 - centre);
+    caret.parentElement.style.transform = `translateX(${shift}px)`;
+    return;
+  }
+  const lh = caret.offsetHeight;
+  const top = caret.offsetTop;
+  const box = el.passage;
+  if (top < box.scrollTop || top + 2 * lh > box.scrollTop + box.clientHeight) {
+    box.scrollTop = Math.max(0, top - lh);
+  }
+}
+
+// Narrowing the window moves every character, so the caret goes with it.
+addEventListener("resize", () => {
+  if (state) placeCaret(built.spans, Math.min(typed.length, state.quote.text.length - 1));
+});
 
 function render() {
   if (!state) return;
@@ -134,43 +181,38 @@ function render() {
     }
   }
 
+  // Focus layout: once you're on the line for a race, everything but the
+  // passage, the lanes and the clock gets out of the way. Set before the
+  // passage is laid out, since the caret's position depends on it.
+  const focus = !!entrant && (state.phase === "countdown" || racing);
+  document.body.classList.toggle("focus", focus);
+
   // passage: what you've typed, coloured against what you should have
   el.passage.classList.toggle("code", state.mode === "code");
   el.passage.classList.toggle("tape", tape);
+  const spans = passageSpans(text);
   const myCaretAt = racing && entrant && !entrant.finished ? typed.length : -1;
-  const frag = document.createDocumentFragment();
-  const track = tape ? document.createElement("span") : frag;
-  if (tape) track.className = "tape-track";
   for (let i = 0; i < text.length; i++) {
-    const span = charSpan(text[i], tape);
-    if (i < typed.length) span.classList.add(typed[i] === text[i] ? "ok" : "bad");
-    if (i === myCaretAt) span.classList.add("caret");
-    // Tape mode shows only your own letter-by-letter position; other
-    // racers' carets would each need their own scroll offset to stay
-    // legible, so they're left to the full passage and the lane bars.
-    if (!tape) {
-      const here = others.get(i);
-      if (here) {
-        span.classList.add("ghost");
-        span.style.setProperty("--c", colour.get(here[0].id));
-        span.dataset.name = here.map((e) => e.name).join(", ");
-      }
+    const span = spans[i];
+    let cls = text[i] === "\n" ? "nl" : "";
+    if (i < typed.length) cls += typed[i] === text[i] ? " ok" : " bad";
+    if (i === myCaretAt) cls += " caret";
+    // Tape mode shows only your own position; other racers' carets would
+    // mostly sit off the one visible line, so they're left to the lanes.
+    const here = tape ? undefined : others.get(i);
+    if (here) {
+      cls += " ghost";
+      span.style.setProperty("--c", colour.get(here[0].id));
+      span.dataset.name = here.map((e) => e.name).join(", ");
+    } else if (span.dataset.name !== undefined) {
+      span.style.removeProperty("--c");
+      delete span.dataset.name;
     }
-    track.append(span);
+    // Only touch what changed: rewriting every class restarts the caret's
+    // blink, and the whole passage re-renders ten times a second mid-race.
+    if (span.className !== cls) span.className = cls;
   }
-  if (tape) {
-    frag.append(track);
-    el.passage.replaceChildren(frag);
-    // Scroll so the caret sits a third of the way in: enough runway to read
-    // ahead, with room behind to see what you just typed.
-    const caret = track.children[Math.max(0, myCaretAt)] ?? track.lastElementChild;
-    if (caret) {
-      const offset = caret.offsetLeft - el.passage.clientWidth / 3;
-      track.style.transform = `translateX(${-Math.max(0, offset)}px)`;
-    }
-  } else {
-    el.passage.replaceChildren(frag);
-  }
+  placeCaret(spans, Math.min(typed.length, text.length - 1));
   el.source.textContent = `— ${state.quote.source}`;
 
   // modes

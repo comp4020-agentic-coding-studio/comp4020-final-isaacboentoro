@@ -100,22 +100,41 @@ h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; colo
      (and clips) instead of pushing the typing box off screen */
   max-height: min(32vh, 15.5lh);
   overflow-y: auto;
-  scroll-behavior: smooth;
+  /* the caret's offsets (app.js placeCaret) are measured against this box */
+  position: relative;
 }
 .passage.code { font-size: 1.15rem; line-height: 1.7; tab-size: 2; }
 
-/* tape mode: one line, the untyped tail clipped rather than wrapped — the
-   caret stays put and the text scrolls under it, letter by letter */
+/* tape mode: one line, with the character you're on pinned to the middle.
+   The line steps one character per keystroke with no transition: an
+   animated slide never settles at typing speed, so nothing stays still long
+   enough to read. Both ends fade out so the cut-off reads as deliberate. */
 .passage.tape {
   max-height: none;
+  height: 1lh;
   overflow: hidden;
   white-space: pre;
-  display: flex;
-  align-items: center;
-  height: 3.2rem;
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
 }
-.passage.tape .tape-track { transition: transform 80ms linear; }
-@media (prefers-reduced-motion: reduce) { .passage.tape .tape-track { transition: none; } }
+.passage.tape .tape-track { display: inline-block; }
+
+/* focus layout: on the line for a race, everything that isn't the race
+   steps aside and the passage gets bigger */
+body.focus .top,
+body.focus .status h1,
+body.focus .modes,
+body.focus .side,
+body.focus .source,
+body.focus #join,
+body.focus .summary { display: none; }
+body.focus .race { grid-template-columns: minmax(0, 1fr); max-width: 1200px; padding-top: 2rem; }
+body.focus .passage { font-size: 2.25rem; max-height: min(50vh, 8lh); }
+body.focus .passage.code { font-size: 1.6rem; }
+body.focus .passage.tape { max-height: none; }
+@media (max-width: 500px) {
+  body.focus .passage { font-size: 1.5rem; }
+  body.focus .passage.code { font-size: 1.15rem; }
+}
 .passage .nl { opacity: 0.5; }
 @media (max-width: 500px) { .passage { font-size: 1.15rem; } }
 .passage .ok { color: var(--text); }
