@@ -40,7 +40,8 @@ let skew = 0; // server clock minus ours
 // newline, or the passage ended); `typed` is that plus whatever's still in
 // the box for the word in progress. The box itself only ever holds the one
 // word — it's cleared the instant a word commits, so there's never a
-// backlog of the whole passage sitting in it.
+// backlog of the whole passage sitting in it. Backspacing out of an empty
+// box hands the last word back to it, while there's a mistake to fix.
 let committed = "";
 let typed = "";
 let errors = 0;
@@ -392,6 +393,32 @@ function commitWords(text, committed, full) {
   }
 }
 
+// The start of the passage word that position `at` falls in: one past the
+// space or newline before it.
+function wordStart(text, at) {
+  let i = at;
+  while (i > 0 && text[i - 1] !== " " && text[i - 1] !== "\n") i--;
+  return i;
+}
+
+// Backspace on an empty box: reopens the last committed word, minus the
+// character the keystroke deletes (usually its closing space), so a word
+// you got wrong can still be fixed. Only while something committed is
+// wrong — the words before your first mistake stay locked. From the start
+// of a line in code, the indent you were given goes with the newline.
+// `whole` (Ctrl/Alt+Backspace) clears the reopened word outright.
+function reopenWord(whole) {
+  const text = state.quote.text;
+  if (prefixLen(committed, text) === committed.length) return false;
+  let back = committed.replace(/\n +$/, "\n").slice(0, -1);
+  const start = wordStart(text, back.length);
+  if (whole) back = back.slice(0, start);
+  committed = back.slice(0, start);
+  typed = back;
+  el.input.value = back.slice(start);
+  return true;
+}
+
 // How much of `s` matches the passage from its start, character for
 // character — the portion that counts as correctly typed.
 function prefixLen(s, text) {
@@ -422,6 +449,17 @@ el.input.addEventListener("keydown", (e) => {
   } else if (e.key === "Tab" && state.phase === "racing" && mine() && !mine().finished) {
     // indentation is typed for you; Tab would only throw you out of the box
     e.preventDefault();
+  } else if (
+    e.key === "Backspace" &&
+    state.phase === "racing" &&
+    mine() &&
+    !mine().finished &&
+    el.input.value === "" &&
+    reopenWord(e.ctrlKey || e.altKey)
+  ) {
+    e.preventDefault();
+    send({ t: "progress", n: correctPrefix(), errors });
+    render();
   }
 });
 
