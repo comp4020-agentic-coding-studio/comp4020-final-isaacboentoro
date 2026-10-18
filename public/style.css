@@ -166,7 +166,23 @@ body.focus .passage.tape { max-height: none; }
   white-space: nowrap;
   pointer-events: none;
 }
+/* state changes (app.js paint) run as view transitions: these are the
+   pieces that glide to their new place, while everything else crossfades */
+.banner { view-transition-name: banner; }
+.passage:not(.replay) { view-transition-name: passage; }
+.lanes { view-transition-name: lanes; }
+.typing { view-transition-name: typing; }
+.actions { view-transition-name: actions; }
+.summary { view-transition-name: summary; }
+::view-transition-group(*) { animation-duration: 320ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+::view-transition-old(*), ::view-transition-new(*) { animation-duration: 220ms; }
+/* the summary rises in under the race rather than just appearing */
+::view-transition-new(summary):only-child { animation: rise 360ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+::view-transition-new(banner):only-child { animation: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes rise { from { opacity: 0; transform: translateY(1rem); } }
+
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .passage .caret, .passage .ghost { animation: none; }
   .bar span { transition: none; }
   .banner.beckon { animation: none; }

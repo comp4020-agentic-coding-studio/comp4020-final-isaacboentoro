@@ -88,7 +88,37 @@ function onState(room) {
     el.input.value = "";
   }
   state = room;
-  render();
+  paint();
+}
+
+// Big changes of state — joining, the start, the finish, results, a new
+// mode — redraw inside a view transition, so the layout glides from one
+// arrangement to the next (style.css names the pieces that move) instead of
+// jumping. Everything in between, like keystrokes and the ten-a-second
+// progress updates, redraws in place.
+const motion = () => !matchMedia("(prefers-reduced-motion: reduce)").matches;
+let lastScene = "";
+let transitioning = false;
+
+function scene() {
+  const e = mine();
+  const go = state.phase === "racing" && e && !e.finished && Date.now() + skew - state.startedAt < 1500;
+  return [state.phase, state.mode, tape, !!e, !!e?.finished, go, !!summary].join("|");
+}
+
+function paint(update = render) {
+  if (!state) return;
+  const next = scene();
+  const changed = lastScene !== "" && next !== lastScene;
+  lastScene = next;
+  // One already running shows the live page, so a change that lands
+  // mid-transition just draws into it rather than cutting it short.
+  if (changed && !transitioning && motion() && document.startViewTransition && !document.hidden) {
+    transitioning = true;
+    const t = document.startViewTransition(update);
+    t.ready.catch(() => {}); // skipped (tab hidden, say): the update still ran
+    t.finished.finally(() => (transitioning = false));
+  } else update();
 }
 
 function mine() {
@@ -226,34 +256,13 @@ function render() {
   el.input.rows = state.mode === "code" ? 5 : 2;
 
   // lanes
-  const lanes = state.entrants
-    .slice()
-    .sort((a, b) => (a.place ?? 99) - (b.place ?? 99) || b.progress - a.progress);
-  el.lanes.replaceChildren(
-    ...lanes.map((e) => {
-      const li = document.createElement("li");
-      if (e.id === me.id) li.className = "me";
-      li.style.setProperty("--c", colour.get(e.id));
-      const pct = Math.round((e.progress / text.length) * 100);
-      li.innerHTML = `<span class="who"></span><span class="bar"><span style="width:${pct}%"></span></span><span class="num"></span>`;
-      li.querySelector(".who").textContent = e.name + (e.id === me.id ? " (you)" : "");
-      li.querySelector(".num").textContent = e.finished
-        ? `${ordinal(e.place)} · ${Math.round(e.wpm)} wpm`
-        : racing || state.phase === "results"
-          ? `${Math.round(e.wpm)} wpm`
-          : e.ready
-            ? "ready ✓"
-            : "joined";
-      li.setAttribute("aria-label", `${e.name}: ${pct}% ${li.querySelector(".num").textContent}`);
-      return li;
-    }),
+  renderLanes(
+    state.entrants
+      .slice()
+      .sort((a, b) => (a.place ?? 99) - (b.place ?? 99) || b.progress - a.progress),
+    colour,
+    racing,
   );
-  if (lanes.length === 0) {
-    const li = document.createElement("li");
-    li.className = "empty";
-    li.textContent = "Nobody on the line yet.";
-    el.lanes.replaceChildren(li);
-  }
 
   // controls
   const results = state.phase === "results";
@@ -300,6 +309,63 @@ function render() {
   tick();
 }
 
+// Each racer keeps the same lane element from render to render, so their
+// bar grows smoothly instead of being redrawn, and an overtake slides the
+// two lanes past each other rather than swapping them in a frame.
+const laneEls = new Map(); // racer id → their <li>
+const emptyLane = document.createElement("li");
+emptyLane.className = "empty";
+emptyLane.textContent = "Nobody on the line yet.";
+
+function renderLanes(lanes, colour, racing) {
+  const text = state.quote.text;
+  const before = new Map([...laneEls].map(([id, li]) => [id, li.getBoundingClientRect().top]));
+  const items = lanes.map((e) => {
+    let li = laneEls.get(e.id);
+    if (!li) {
+      li = document.createElement("li");
+      li.innerHTML = `<span class="who"></span><span class="bar"><span></span></span><span class="num"></span>`;
+      laneEls.set(e.id, li);
+    }
+    li.className = e.id === me.id ? "me" : "";
+    li.style.setProperty("--c", colour.get(e.id));
+    const pct = Math.round((e.progress / text.length) * 100);
+    li.querySelector(".bar span").style.width = `${pct}%`;
+    li.querySelector(".who").textContent = e.name + (e.id === me.id ? " (you)" : "");
+    const num = e.finished
+      ? `${ordinal(e.place)} · ${Math.round(e.wpm)} wpm`
+      : racing || state.phase === "results"
+        ? `${Math.round(e.wpm)} wpm`
+        : e.ready
+          ? "ready ✓"
+          : "joined";
+    li.querySelector(".num").textContent = num;
+    li.setAttribute("aria-label", `${e.name}: ${pct}% ${num}`);
+    return li;
+  });
+  for (const id of laneEls.keys()) if (!lanes.some((e) => e.id === id)) laneEls.delete(id);
+  if (items.length === 0) items.push(emptyLane);
+
+  // Move only the lanes that are out of place: taking a node out of the
+  // page cancels its bar's transition.
+  items.forEach((li, i) => {
+    if (el.lanes.children[i] !== li) el.lanes.insertBefore(li, el.lanes.children[i] ?? null);
+  });
+  while (el.lanes.children.length > items.length) el.lanes.lastChild.remove();
+
+  // A view transition is already moving the lanes as a whole.
+  if (!motion() || transitioning) return;
+  for (const [id, li] of laneEls) {
+    const was = before.get(id);
+    if (was === undefined) {
+      li.animate([{ opacity: 0, transform: "translateY(-0.5rem)" }, {}], { duration: 250, easing: "ease-out" });
+    } else {
+      const dy = was - li.getBoundingClientRect().top;
+      if (dy) li.animate([{ transform: `translateY(${dy}px)` }, {}], { duration: 300, easing: EASE });
+    }
+  }
+}
+
 function accuracyPct() {
   const good = correctPrefix();
   return good + errors === 0 ? 100 : Math.round((good / (good + errors)) * 100);
@@ -321,9 +387,15 @@ function tick() {
 }
 // The phase line only re-announces when its text changes, so ticking every
 // second is fine for screen readers during the countdown.
-setInterval(tick, 1000);
+// (The "Go!" banner times out between updates, so check for that too.)
+setInterval(() => (state && scene() !== lastScene ? paint() : tick()), 1000);
 
 // The big "what happens next" strip above the passage.
+el.banner.innerHTML = `<span class="big"></span><span class="line"></span>`;
+const bannerBig = el.banner.querySelector(".big");
+const bannerLine = el.banner.querySelector(".line");
+const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+
 function renderBanner(left) {
   const entrant = mine();
   const ready = state.entrants.filter((e) => e.ready).length;
@@ -367,8 +439,21 @@ function renderBanner(left) {
     (state.phase === "countdown" && entrant && !entrant.ready);
   el.banner.hidden = !big;
   el.banner.className = `banner ${tone} ${beckon ? "beckon" : ""}`;
-  el.banner.innerHTML = big ? `<span class="big"></span><span class="line">${line}</span>` : "";
-  if (big) el.banner.querySelector(".big").textContent = big;
+  // Only touch what changed, and give each change a beat: the countdown
+  // digit drops into place, a new message fades up.
+  if (bannerBig.textContent !== big) {
+    bannerBig.textContent = big;
+    if (big && motion()) {
+      bannerBig.animate([{ opacity: 0, transform: "scale(1.6)" }, {}], { duration: 280, easing: EASE });
+    }
+  }
+  if (bannerLine.dataset.html !== line) {
+    bannerLine.dataset.html = line;
+    bannerLine.innerHTML = line;
+    if (line && motion()) {
+      bannerLine.animate([{ opacity: 0, transform: "translateY(0.25rem)" }, {}], { duration: 220, easing: "ease-out" });
+    }
+  }
 }
 
 // The end of the word sitting at `from` in the passage, one past its closing
@@ -525,7 +610,7 @@ el.tapeToggle.addEventListener("click", () => {
   } catch {
     // no durable storage here: the toggle still works for this page view
   }
-  render();
+  paint();
 });
 
 el.nameForm.addEventListener("submit", (e) => {
@@ -548,8 +633,11 @@ function onBoard({ today, allTime, history }) {
 function onSummary(race) {
   summary = race;
   if (!race.entrants.some((e) => e.id === replayOf)) replayOf = race.entrants[0]?.id;
-  render(); // unhides the summary, so the chart can measure its width
-  renderSummary();
+  // render unhides the summary, so the chart can measure its width
+  paint(() => {
+    render();
+    renderSummary();
+  });
 }
 
 const byPlace = (a, b) => (a.place ?? 99) - (b.place ?? 99) || b.progress - a.progress;
