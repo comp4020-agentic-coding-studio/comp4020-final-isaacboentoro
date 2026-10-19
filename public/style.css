@@ -166,19 +166,58 @@ body.focus .passage.tape { max-height: none; }
   white-space: nowrap;
   pointer-events: none;
 }
-/* state changes (app.js paint) run as view transitions: these are the
-   pieces that glide to their new place, while everything else crossfades */
+/* state changes (app.js paint) run as view transitions: the pieces named
+   here glide to their new place and size, and whatever the focus layout
+   hides or brings back slides out of the way rather than just blinking */
+.top { view-transition-name: top; }
+.side { view-transition-name: side; }
+.status h1 { view-transition-name: heading; }
+.modes { view-transition-name: modes; }
+#phase { view-transition-name: phase; }
 .banner { view-transition-name: banner; }
 .passage:not(.replay) { view-transition-name: passage; }
+#source { view-transition-name: source; }
 .lanes { view-transition-name: lanes; }
 .typing { view-transition-name: typing; }
 .actions { view-transition-name: actions; }
 .summary { view-transition-name: summary; }
-::view-transition-group(*) { animation-duration: 320ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
-::view-transition-old(*), ::view-transition-new(*) { animation-duration: 220ms; }
-/* the summary rises in under the race rather than just appearing */
-::view-transition-new(summary):only-child { animation: rise 360ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-::view-transition-new(banner):only-child { animation: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+:root {
+  --vt-out: 220ms ease-in both;
+  --vt-in: 380ms cubic-bezier(0.2, 0.8, 0.2, 1) 140ms both;
+}
+::view-transition-group(*) { animation-duration: 520ms; animation-timing-function: cubic-bezier(0.65, 0, 0.25, 1); }
+/* a piece that changes size (the passage's text grows as the race starts)
+   scales its old picture away while the new one fades in behind it,
+   instead of showing both at once */
+::view-transition-old(*) { animation: fade-out var(--vt-out); }
+::view-transition-new(*) { animation: fade-in var(--vt-in); }
+/* going: the header lifts away, the sidebar slides off right, the rest of
+   the chrome fades up */
+::view-transition-old(top):only-child { animation: exit-up var(--vt-out); }
+::view-transition-old(side):only-child { animation: exit-right 320ms ease-in both; }
+::view-transition-old(heading):only-child,
+::view-transition-old(modes):only-child,
+::view-transition-old(source):only-child,
+::view-transition-old(summary):only-child { animation: exit-up var(--vt-out); }
+/* coming back: the same, in reverse */
+::view-transition-new(top):only-child { animation: enter-down var(--vt-in); }
+::view-transition-new(side):only-child { animation: enter-left 420ms cubic-bezier(0.2, 0.8, 0.2, 1) 160ms both; }
+::view-transition-new(heading):only-child,
+::view-transition-new(modes):only-child,
+::view-transition-new(source):only-child,
+::view-transition-new(banner):only-child,
+::view-transition-new(summary):only-child { animation: rise var(--vt-in); }
+/* the passage's text grows as the race starts: show only the new picture,
+   scaled from the old box to the new one, so the words themselves grow
+   into place rather than a small copy fading through a big one */
+::view-transition-old(passage) { animation: none; opacity: 0; }
+::view-transition-new(passage) { animation: none; }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes exit-up { to { opacity: 0; transform: translateY(-1rem); } }
+@keyframes exit-right { to { opacity: 0; transform: translateX(3rem); } }
+@keyframes enter-down { from { opacity: 0; transform: translateY(-1rem); } }
+@keyframes enter-left { from { opacity: 0; transform: translateX(3rem); } }
 @keyframes rise { from { opacity: 0; transform: translateY(1rem); } }
 
 @media (prefers-reduced-motion: reduce) {
