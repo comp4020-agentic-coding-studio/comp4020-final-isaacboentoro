@@ -50,3 +50,10 @@ pnpm dev        # http://localhost:8080, data in ./data
 
 `pnpm check` runs the type checker and the spec, against a running copy of
 the app (`APP_URL`, default `http://localhost:8080`).
+
+`pnpm shoot` drives real Chromium through a two-racer race at 1920x1080 and
+390x844 against the same running app (or a URL you pass it, like the
+deployed site). It fails on console errors, any serious axe violation in any
+of the themes, sideways scrolling, a race you can't play from the keyboard,
+a countdown that jumps, lane stats that wrap, and a first load or mid-race
+state message over budget. Screenshots of every state land in `.screens/`.

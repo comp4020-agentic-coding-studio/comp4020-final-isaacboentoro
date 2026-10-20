@@ -21,3 +21,6 @@ mise.local.toml
 # harness is CLAUDE.md (and any AGENTS.md), not this directory.
 .claude/
 data/
+
+# pnpm shoot writes its screenshots here
+.screens/

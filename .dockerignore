@@ -12,3 +12,4 @@ mise.local.toml
 *.pem
 .claude
 data
+.screens
