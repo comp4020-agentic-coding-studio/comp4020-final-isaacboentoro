@@ -1,10 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { gzipSync } from "node:zlib";
 import { WebSocketServer } from "ws";
-import { ensurePlayer, getPlayer, renamePlayer, type Player } from "./db.ts";
+import { createPlayer, playerBySecret, renamePlayer, type Player } from "./db.ts";
 import { readmePage, roomPage } from "./pages.ts";
 import { boardFor, release, room, type Conn } from "./race.ts";
 
@@ -12,11 +12,11 @@ const PORT = Number(process.env.PORT ?? 8080);
 const COOKIE = "racer";
 const ROOM = /^[a-z0-9-]{1,24}$/;
 
-// A person is a browser: an anonymous id in a long-lived cookie, with a name
+// A person is a browser: a random secret in a long-lived cookie, with a name
 // they can change. No accounts, no email.
-function cookieId(req: IncomingMessage): string | undefined {
-  const m = req.headers.cookie?.match(/(?:^|;\s*)racer=([0-9a-f-]{36})/);
-  return m?.[1];
+function cookiePlayer(req: IncomingMessage): Player | undefined {
+  const m = req.headers.cookie?.match(/(?:^|;\s*)racer=([A-Za-z0-9_-]{43})(?:;|$)/);
+  return m ? playerBySecret(m[1]) : undefined;
 }
 
 const ADJ = ["quick", "lazy", "brisk", "nimble", "steady", "sly", "bold", "calm", "eager", "swift"];
@@ -24,15 +24,15 @@ const NOUN = ["fox", "otter", "wombat", "heron", "magpie", "gecko", "quokka", "l
 const pick = (xs: string[]) => xs[Math.floor(Math.random() * xs.length)];
 
 function identify(req: IncomingMessage, res: ServerResponse): Player {
-  const existing = cookieId(req);
-  const player = existing && getPlayer(existing);
-  if (player) return player;
-  const id = existing ?? randomUUID();
+  const known = cookiePlayer(req);
+  if (known) return known;
+  const { player, secret } = createPlayer(`${pick(ADJ)}-${pick(NOUN)}`);
+  const secure = req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
   res.setHeader(
     "Set-Cookie",
-    `${COOKIE}=${id}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`,
+    `${COOKIE}=${secret}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${secure}`,
   );
-  return ensurePlayer(id, `${pick(ADJ)}-${pick(NOUN)}`);
+  return player;
 }
 
 export function cleanName(raw: unknown): string | null {
@@ -154,9 +154,9 @@ const server = createServer(async (req, res) => {
     if (path.startsWith("/readme/docs/")) return serveFile(req, res, docsDir, path.slice(13));
     if (path.startsWith("/static/")) return serveFile(req, res, publicDir, path.slice(8));
     if (path === "/api/board") {
-      const id = cookieId(req);
+      const player = cookiePlayer(req);
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify(boardFor(id ?? "")));
+      return res.end(JSON.stringify(boardFor(player?.id ?? "")));
     }
     notFound(res);
   } catch (err) {
@@ -169,8 +169,7 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "/", "http://localhost");
-  const id = cookieId(req);
-  const player = id && getPlayer(id);
+  const player = cookiePlayer(req);
   const roomId = url.searchParams.get("room") ?? "main";
   if (url.pathname !== "/ws" || !player || !ROOM.test(roomId)) {
     socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");

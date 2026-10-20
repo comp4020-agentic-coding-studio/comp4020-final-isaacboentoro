@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -34,6 +34,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS results_player ON results(player_id);
 `);
 
+// A player row's `id` is internal and never leaves the server. Signing in is
+// a separate random secret in the cookie, stored here only as its hash, so
+// neither a leaked id nor a copy of this file is a way in.
+const playerCols = db.prepare("PRAGMA table_info(players)").all() as { name: string }[];
+if (!playerCols.some((c) => c.name === "secret_hash")) {
+  db.exec("ALTER TABLE players ADD COLUMN secret_hash TEXT");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS players_secret ON players(secret_hash)");
+}
+
 // Races from before modes existed were all quotes.
 const raceCols = db.prepare("PRAGMA table_info(races)").all() as { name: string }[];
 if (!raceCols.some((c) => c.name === "mode")) {
@@ -53,17 +62,29 @@ export function publicId(id: string): string {
   return createHash("sha256").update(`keyrace:${id}`).digest("base64url").slice(0, 16);
 }
 
-export function getPlayer(id: string): Player | undefined {
-  return db.prepare("SELECT id, name FROM players WHERE id = ?").get(id) as Player | undefined;
+const hashSecret = (secret: string) => createHash("sha256").update(secret).digest("base64url");
+
+// Who a cookie's secret belongs to, if anyone. Players from before secrets
+// existed have none, so their old cookies (which were their ids, and were
+// published) match nothing and get a fresh identity.
+export function playerBySecret(secret: string): Player | undefined {
+  return db.prepare("SELECT id, name FROM players WHERE secret_hash = ?").get(hashSecret(secret)) as
+    | Player
+    | undefined;
 }
 
-export function ensurePlayer(id: string, name: string): Player {
-  db.prepare("INSERT OR IGNORE INTO players (id, name, created_at) VALUES (?, ?, ?)").run(
-    id,
+// A new player, and the secret for their cookie. The server always mints
+// both: a browser never gets to name its own identity.
+export function createPlayer(name: string): { player: Player; secret: string } {
+  const player = { id: randomUUID(), name };
+  const secret = randomBytes(32).toString("base64url");
+  db.prepare("INSERT INTO players (id, name, created_at, secret_hash) VALUES (?, ?, ?, ?)").run(
+    player.id,
     name,
     Date.now(),
+    hashSecret(secret),
   );
-  return getPlayer(id)!;
+  return { player, secret };
 }
 
 export function renamePlayer(id: string, name: string): void {
