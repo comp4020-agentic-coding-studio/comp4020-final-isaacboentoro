@@ -6,7 +6,8 @@
  * that `pnpm check` can't: a console error, a serious axe violation in any
  * theme, a page that scrolls sideways, a race that can't be played from the
  * keyboard alone, a countdown that jumps around, a racer who can't see the
- * other one, and a page or socket heavier than its budget.
+ * other one, an arcade meter that doesn't climb or reset, and a page or
+ * socket heavier than its budget.
  *
  *   pnpm shoot                     # against APP_URL (default localhost:8080)
  *   pnpm shoot https://….fly.dev/  # against the deployed site
@@ -46,7 +47,7 @@ function findChrome(): string {
   return found;
 }
 
-type Violation = { id: string; impact: string; help: string; where: string };
+type Violation = { id: string; impact: string; help: string; where: string; why: string };
 
 // Nothing else measures accessibility, so this is the sensor for it. Only
 // serious and critical violations fail the run.
@@ -54,7 +55,16 @@ async function axe(page: Page): Promise<Violation[]> {
   await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core") });
   return page.evaluate(async () => {
     const run = (globalThis as unknown as {
-      axe: { run: (o: unknown) => Promise<{ violations: Array<{ id: string; impact: string | null; help: string; nodes: Array<{ target: string[] }> }> }> };
+      axe: {
+        run: (o: unknown) => Promise<{
+          violations: Array<{
+            id: string;
+            impact: string | null;
+            help: string;
+            nodes: Array<{ target: string[]; html: string; any: Array<{ message: string }> }>;
+          }>;
+        }>;
+      };
     }).axe.run;
     const { violations } = await run({ runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
     return violations
@@ -64,6 +74,9 @@ async function axe(page: Page): Promise<Violation[]> {
         impact: v.impact ?? "",
         help: v.help,
         where: v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(", "),
+        // the first offender's markup and axe's reason, so a failure says
+        // what to fix rather than just where
+        why: `${v.nodes[0]?.html.slice(0, 70) ?? ""} — ${v.nodes[0]?.any[0]?.message ?? ""}`,
       }));
   });
 }
@@ -246,13 +259,59 @@ async function viewport(browser: Browser, vp: (typeof VIEWPORTS)[number]): Promi
   await b.ctx.close();
 }
 
+// Arcade, played the way it's scored: clean words should climb the
+// multiplier, one mistake should drop it, and the meter and results should
+// say so, on screen and inside the page's width.
+async function arcade(browser: Browser, vp: (typeof VIEWPORTS)[number]): Promise<void> {
+  const note = (m: string) => problems.push(`[${vp.name} arcade] ${m}`);
+  const { ctx, page } = await open(browser, room(`arcade-${vp.name}`), vp, note);
+  await page.click('.mode[data-mode="arcade"]');
+  await page.waitForFunction(() => document.querySelector('.mode[data-mode="arcade"]')!.getAttribute("aria-checked") === "true");
+  await page.focus("#input");
+  await page.keyboard.press("a");
+  await wait(200);
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.getElementById("phase")!.textContent!.startsWith("Racing"), { timeout: 15_000 });
+  const words = (await passage(page)).split(" ");
+  const meter = () =>
+    page.evaluate(() => ({
+      shown: !document.getElementById("arcade")!.hidden,
+      combo: Number(document.getElementById("combo")!.textContent),
+      x: document.getElementById("mult")!.textContent,
+    }));
+  for (let w = 0; w < 6; w++) await page.keyboard.type(`${words[w]} `, { delay: 55 });
+  await wait(250);
+  const built = await meter();
+  if (!built.shown) note("the combo meter isn't shown during an arcade game");
+  if (built.x !== "×2") note(`six clean words should reach ×2, meter says ${built.x}`);
+  if (built.combo < 20) note(`combo only ${built.combo} after six clean words`);
+  await shot(page, `${vp.name}-arcade`);
+  if ((await overflow(page)) > 0) note(`arcade scrolls sideways by ${await overflow(page)}px`);
+  const meterBox = await page.$eval("#arcade", (e) => {
+    const r = e.getBoundingClientRect();
+    return r.bottom <= innerHeight && r.top >= 0;
+  });
+  if (!meterBox) note("the combo meter is off screen while racing");
+  for (const v of await axe(page)) note(`axe ${v.impact}: ${v.id} at ${v.where} — ${v.why}`);
+
+  const next = words[6];
+  await page.keyboard.type(next[0] === "z" ? "q" : "z", { delay: 55 });
+  await wait(250);
+  const broken = await meter();
+  if (broken.x !== "×1" || broken.combo !== 0) note(`a mistake should reset to ×1 and combo 0, meter says ${broken.x} / ${broken.combo}`);
+  await ctx.close();
+}
+
 async function main(): Promise<void> {
   await rm(OUT, { recursive: true, force: true });
   await mkdir(OUT, { recursive: true });
   await weigh();
   const browser = await puppeteer.launch({ executablePath: findChrome(), args: ["--no-sandbox", "--font-render-hinting=none"] });
   try {
-    for (const vp of VIEWPORTS) await viewport(browser, vp);
+    for (const vp of VIEWPORTS) {
+      await viewport(browser, vp);
+      await arcade(browser, vp);
+    }
   } finally {
     await browser.close();
   }
