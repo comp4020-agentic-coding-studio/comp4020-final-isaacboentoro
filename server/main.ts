@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
+import { gzipSync } from "node:zlib";
 import { WebSocketServer } from "ws";
 import { ensurePlayer, getPlayer, renamePlayer, type Player } from "./db.ts";
 import { readmePage, roomPage } from "./pages.ts";
@@ -50,21 +51,52 @@ const TYPES: Record<string, string> = {
   ".webp": "image/webp",
 };
 
-async function serveFile(res: ServerResponse, root: string, rel: string): Promise<void> {
+// Static files are read, hashed and gzipped once per version and kept
+// (keyed on mtime, so editing under `pnpm dev` still shows up). `no-cache`
+// has the browser ask each time, so a deploy shows up at once, but an
+// unchanged file costs a 304 rather than the whole thing again.
+const cache = new Map<string, { mtime: number; etag: string; raw: Buffer; gz: Buffer }>();
+
+async function serveFile(req: IncomingMessage, res: ServerResponse, root: string, rel: string): Promise<void> {
   const path = normalize(join(root, rel));
   if (!path.startsWith(root + "/") || !TYPES[extname(path)]) return notFound(res);
+  let file = cache.get(path);
   try {
-    const body = await readFile(path);
-    res.writeHead(200, { "Content-Type": TYPES[extname(path)], "Cache-Control": "no-cache" });
-    res.end(body);
+    const mtime = (await stat(path)).mtimeMs;
+    if (file?.mtime !== mtime) {
+      const raw = await readFile(path);
+      const etag = `"${createHash("sha1").update(raw).digest("base64url").slice(0, 16)}"`;
+      file = { mtime, etag, raw, gz: gzipSync(raw) };
+      cache.set(path, file);
+    }
   } catch {
-    notFound(res);
+    return notFound(res);
   }
+  const headers = { "Content-Type": TYPES[extname(path)], "Cache-Control": "no-cache", ETag: file.etag, Vary: "Accept-Encoding" };
+  if (req.headers["if-none-match"] === file.etag) {
+    res.writeHead(304, headers);
+    return void res.end();
+  }
+  send(req, res, 200, headers, file.raw, file.gz);
+}
+
+// Sends a body gzipped when the browser takes it and it's worth the bother.
+function send(
+  req: IncomingMessage,
+  res: ServerResponse,
+  status: number,
+  headers: Record<string, string>,
+  raw: Buffer,
+  gz?: Buffer,
+): void {
+  const zip = raw.length > 1024 && /\bgzip\b/.test(String(req.headers["accept-encoding"] ?? ""));
+  const body = zip ? (gz ?? gzipSync(raw)) : raw;
+  res.writeHead(status, { ...headers, ...(zip ? { "Content-Encoding": "gzip" } : {}), "Content-Length": String(body.length) });
+  res.end(req.method === "HEAD" ? undefined : body);
 }
 
 function html(res: ServerResponse, body: string, status = 200): void {
-  res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(body);
+  send(res.req, res, status, { "Content-Type": "text/html; charset=utf-8", Vary: "Accept-Encoding" }, Buffer.from(body));
 }
 
 function notFound(res: ServerResponse): void {
@@ -119,8 +151,8 @@ const server = createServer(async (req, res) => {
     if (path === "/readme/") return html(res, readmePage());
     // README images are linked relative to the repo root (docs/…), which
     // from /readme/ resolves to /readme/docs/…
-    if (path.startsWith("/readme/docs/")) return serveFile(res, docsDir, path.slice(13));
-    if (path.startsWith("/static/")) return serveFile(res, publicDir, path.slice(8));
+    if (path.startsWith("/readme/docs/")) return serveFile(req, res, docsDir, path.slice(13));
+    if (path.startsWith("/static/")) return serveFile(req, res, publicDir, path.slice(8));
     if (path === "/api/board") {
       const id = cookieId(req);
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -150,13 +182,15 @@ server.on("upgrade", (req, socket, head) => {
     r.add(conn);
 
     ws.on("message", (data) => {
-      let msg: { t?: string; n?: number; errors?: number; miss?: unknown; name?: string; mode?: unknown };
+      let msg: { t?: string; n?: number; c?: unknown; errors?: number; miss?: unknown; name?: string; mode?: unknown };
       try {
         msg = JSON.parse(String(data));
       } catch {
         return;
       }
-      if (msg.t === "join") r.join(conn.player);
+      // the page times the round trip to line its clock up with ours
+      if (msg.t === "ping" && typeof msg.c === "number") ws.send(JSON.stringify({ t: "pong", c: msg.c, s: Date.now() }));
+      else if (msg.t === "join") r.join(conn.player);
       else if (msg.t === "leave") r.leave(conn.player);
       else if (msg.t === "ready") r.ready(conn.player);
       else if (msg.t === "mode") r.setMode(msg.mode);

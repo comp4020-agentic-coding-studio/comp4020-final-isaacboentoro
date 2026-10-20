@@ -58,27 +58,57 @@ try {
 }
 el.tapeToggle.setAttribute("aria-pressed", String(tape));
 
+// Reconnects back off (with jitter) rather than every second on the dot: a
+// deploy drops every socket at once, and they shouldn't all knock together.
+let retries = 0;
+
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(roomId)}`);
+  ws.onopen = () => {
+    retries = 0;
+    best = Infinity;
+    syncClock();
+  };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.t === "state") onState(msg.room);
     if (msg.t === "board") onBoard(msg);
     if (msg.t === "summary") onSummary(msg.race);
+    if (msg.t === "pong") onPong(msg);
   };
   ws.onclose = () => {
     el.phase.textContent = "Lost the connection. Reconnecting…";
     el.input.disabled = true;
     el.join.disabled = true;
-    setTimeout(connect, 1000);
+    const wait = Math.min(10_000, 500 * 2 ** retries++);
+    setTimeout(connect, wait / 2 + Math.random() * (wait / 2));
   };
 }
+
+// The server's clock, which owns every countdown. Each ping's round trip
+// bounds how stale its timestamp was; the tightest one seen is the one to
+// trust, so a laggy moment can't shove the countdown around. Until a pong
+// lands, each state's own timestamp is the estimate.
+let best = Infinity; // round trip of the sample `skew` came from
+function syncClock() {
+  for (let i = 0; i < 4; i++) setTimeout(() => send({ t: "ping", c: performance.now() }), i * 250);
+}
+function onPong({ c, s }) {
+  const rtt = performance.now() - c;
+  if (rtt > best) return;
+  best = rtt;
+  skew = s + rtt / 2 - Date.now();
+}
+// re-check now and then: clocks drift, and so does the route
+setInterval(() => document.hidden || syncClock(), 60_000);
 
 const send = (msg) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg));
 
 function onState(room) {
-  skew = room.now - Date.now();
+  if (best === Infinity) skew = room.now - Date.now();
+  // the passage only comes with the state when it's changed
+  room.quote ??= state?.quote;
   // Typing is locked before the start, so that's when the last race's
   // keystrokes get cleared; results keep them on screen.
   if (room.phase === "lobby" || room.phase === "countdown") {
@@ -88,8 +118,11 @@ function onState(room) {
     el.input.value = "";
   }
   state = room;
+  // A hidden tab only needs to keep up, not draw; it catches up on return.
+  if (document.hidden) return;
   paint();
 }
+document.addEventListener("visibilitychange", () => document.hidden || paint());
 
 // Big changes of state — joining, the start, the finish, results, a new
 // mode — redraw inside a view transition, so the layout glides from one

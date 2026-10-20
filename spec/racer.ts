@@ -58,7 +58,8 @@ export function racer(cookie: string, room: string) {
     const msg = JSON.parse(String(data));
     if (msg.t === "summary") summary = msg.race;
     if (msg.t !== "state") return;
-    latest = msg.room;
+    // the passage only comes when it changes, like the page keeps it
+    latest = { ...msg.room, quote: msg.room.quote ?? latest?.quote };
     for (const w of waiters) w();
   });
   const opened = new Promise((resolve) => ws.once("open", resolve));

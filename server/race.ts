@@ -58,6 +58,11 @@ export class Room {
   private summary: object | null = null;
   private timer: NodeJS.Timeout | undefined;
   private dirty = false;
+  // The passage only changes between races, but state goes out ten times a
+  // second mid-race; it rides along only when it's new to the room, or to a
+  // connection that hasn't had it. A sprint's passage is ~1.5 KB of a ~1.8 KB
+  // message, so this is most of the traffic.
+  private sentQuote: Quote | null = null;
   private ticker: NodeJS.Timeout;
 
   constructor(id: string) {
@@ -83,10 +88,12 @@ export class Room {
   }
 
   add(conn: Conn): void {
-    this.conns.add(conn);
     this.send(conn, { t: "board", ...boardFor(conn.player.id) });
     if (this.summary) this.send(conn, { t: "summary", race: this.summary });
+    // the newcomer gets the passage in full; everyone else just the change
     this.broadcast();
+    this.conns.add(conn);
+    this.send(conn, { t: "state", room: this.snapshot(true) });
   }
 
   remove(conn: Conn): void {
@@ -296,7 +303,7 @@ export class Room {
     if (then) this.timer = setTimeout(then, ms);
   }
 
-  snapshot() {
+  snapshot(withQuote = false) {
     const now = Date.now();
     const racing = this.phase === "racing" || this.phase === "results";
     return {
@@ -306,7 +313,7 @@ export class Room {
       endsAt: this.phaseEndsAt,
       startedAt: racing ? this.startedAt : null,
       mode: this.mode,
-      quote: { text: this.quote.text, source: this.quote.source },
+      ...(withQuote ? { quote: { text: this.quote.text, source: this.quote.source } } : {}),
       watching: new Set([...this.conns].map((c) => c.player.id)).size,
       queued: [...this.queued].map(publicId),
       entrants: [...this.entrants.values()].map((e) => ({
@@ -323,7 +330,9 @@ export class Room {
 
   broadcast(): void {
     this.dirty = false;
-    const msg = JSON.stringify({ t: "state", room: this.snapshot() });
+    const fresh = this.sentQuote !== this.quote;
+    this.sentQuote = this.quote;
+    const msg = JSON.stringify({ t: "state", room: this.snapshot(fresh) });
     for (const c of this.conns) if (c.ws.readyState === c.ws.OPEN) c.ws.send(msg);
   }
 
