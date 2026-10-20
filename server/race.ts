@@ -1,5 +1,5 @@
 import type { WebSocket } from "ws";
-import { history, leaderboard, saveRace, type Player } from "./db.ts";
+import { history, leaderboard, publicId, saveRace, type Player } from "./db.ts";
 import { isMode, randomPassage, SPRINT_MS, type Mode } from "./passages.ts";
 import type { Quote } from "./quotes.ts";
 
@@ -257,7 +257,7 @@ export class Room {
       source: this.quote.source,
       seconds: Math.round((end - this.startedAt) / 100) / 10,
       entrants: [...this.entrants.values()].map((e, k) => ({
-        id: e.id,
+        id: publicId(e.id),
         name: e.name,
         place: e.place,
         progress: e.progress,
@@ -308,9 +308,9 @@ export class Room {
       mode: this.mode,
       quote: { text: this.quote.text, source: this.quote.source },
       watching: new Set([...this.conns].map((c) => c.player.id)).size,
-      queued: [...this.queued],
+      queued: [...this.queued].map(publicId),
       entrants: [...this.entrants.values()].map((e) => ({
-        id: e.id,
+        id: publicId(e.id),
         name: e.name,
         progress: e.progress,
         place: e.place,

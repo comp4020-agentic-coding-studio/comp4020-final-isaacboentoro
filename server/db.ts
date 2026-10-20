@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -42,6 +43,14 @@ if (!raceCols.some((c) => c.name === "mode")) {
 export interface Player {
   id: string;
   name: string;
+}
+
+// A player's id is the secret in their cookie: whoever has it *is* them.
+// Anything that leaves the server — room state, summaries, leaderboards —
+// names a player by this one-way hash of it instead, which is enough to say
+// "that's you" or tell two racers apart, and useless to sign in with.
+export function publicId(id: string): string {
+  return createHash("sha256").update(`keyrace:${id}`).digest("base64url").slice(0, 16);
 }
 
 export function getPlayer(id: string): Player | undefined {
@@ -114,7 +123,8 @@ export function leaderboard(since = 0, limit = 10): Best[] {
         ORDER BY wpm DESC
         LIMIT ?`,
     )
-    .all(since, limit) as unknown as Best[];
+    .all(since, limit)
+    .map((r) => ({ ...r, id: publicId(r.id as string) })) as unknown as Best[];
 }
 
 export interface HistoryRow {

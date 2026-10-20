@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { marked } from "marked";
-import type { Best, HistoryRow, Player } from "./db.ts";
+import { publicId, type Best, type HistoryRow, type Player } from "./db.ts";
 
 export const esc = (s: string): string =>
   s.replace(
@@ -119,11 +119,11 @@ export function roomPage(
     </section>
     <section aria-labelledby="today-h">
       <h2 id="today-h">Fastest today</h2>
-      <div id="today">${boardList(board.today, player.id)}</div>
+      <div id="today">${boardList(board.today, publicId(player.id))}</div>
     </section>
     <section aria-labelledby="all-h">
       <h2 id="all-h">Fastest ever</h2>
-      <div id="all-time">${boardList(board.allTime, player.id)}</div>
+      <div id="all-time">${boardList(board.allTime, publicId(player.id))}</div>
     </section>
     <section aria-labelledby="rooms-h">
       <h2 id="rooms-h">Race your friends</h2>
@@ -135,7 +135,7 @@ export function roomPage(
     </section>
   </aside>
 </main>
-<script>window.ME = ${JSON.stringify({ id: player.id, name: player.name }).replace(/</g, "\\u003c")};</script>
+<script>window.ME = ${JSON.stringify({ id: publicId(player.id), name: player.name }).replace(/</g, "\\u003c")};</script>
 <script type="module" src="/static/app.js"></script>`,
   );
 }
