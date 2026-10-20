@@ -9,6 +9,9 @@ import type { Quote } from "./quotes.ts";
 export const COUNTDOWN_MS = 10_000;
 export const READY_MS = 3_000;
 export const RACE_LIMIT_MS = 120_000;
+// How long a race waits for a racer whose connection dropped before calling
+// it: a wifi hiccup, a laptop lid or a phone switching apps shouldn't end it.
+export const GRACE_MS = 5_000;
 export const RESULTS_MS = 8_000;
 
 // Fastest anyone is allowed to go: 25 characters a second is 300 WPM, well
@@ -57,6 +60,7 @@ export class Room {
   private queued = new Set<string>();
   private summary: object | null = null;
   private timer: NodeJS.Timeout | undefined;
+  private grace: NodeJS.Timeout | undefined;
   private dirty = false;
   // The passage only changes between races, but state goes out ten times a
   // second mid-race; it rides along only when it's new to the room, or to a
@@ -85,6 +89,7 @@ export class Room {
   dispose(): void {
     clearInterval(this.ticker);
     clearTimeout(this.timer);
+    clearTimeout(this.grace);
   }
 
   add(conn: Conn): void {
@@ -96,7 +101,7 @@ export class Room {
     this.send(conn, { t: "state", room: this.snapshot(true) });
   }
 
-  remove(conn: Conn): void {
+  remove(conn: Conn, dropped = false): void {
     if (!this.conns.delete(conn)) return;
     // Leaving before the start gives the spot back; leaving mid-race is a DNF.
     const stillHere = [...this.conns].some((c) => c.player.id === conn.player.id);
@@ -107,14 +112,23 @@ export class Room {
       else this.maybeStartEarly();
     }
     // Nobody left to wait for: end the race rather than run out the clock.
-    if (this.phase === "racing") {
-      const present = new Set([...this.conns].map((c) => c.player.id));
-      const waiting = [...this.entrants.values()].some(
-        (e) => e.finishedAt === null && present.has(e.id),
-      );
-      if (!waiting) return this.finish();
+    // A closed tab means it at once; a dropped connection gets a moment,
+    // since the page reconnects within a second or two and picks up where it
+    // was, and a blip shouldn't cost anyone their race.
+    if (this.phase === "racing" && !this.racerPresent()) {
+      if (!dropped) return this.finish();
+      this.grace ??= setTimeout(() => {
+        this.grace = undefined;
+        if (this.phase === "racing" && !this.racerPresent()) this.finish();
+      }, GRACE_MS);
     }
     this.broadcast();
+  }
+
+  // Is anyone still racing actually connected?
+  private racerPresent(): boolean {
+    const present = new Set([...this.conns].map((c) => c.player.id));
+    return [...this.entrants.values()].some((e) => e.finishedAt === null && present.has(e.id));
   }
 
   rename(player: Player): void {
@@ -217,11 +231,7 @@ export class Room {
     if (e.progress === this.quote.text.length) {
       e.finishedAt = now;
       e.place = [...this.entrants.values()].filter((x) => x.finishedAt !== null).length;
-      const present = new Set([...this.conns].map((c) => c.player.id));
-      const waiting = [...this.entrants.values()].some(
-        (x) => x.finishedAt === null && present.has(x.id),
-      );
-      if (!waiting) {
+      if (!this.racerPresent()) {
         this.finish();
         return;
       }
@@ -237,6 +247,8 @@ export class Room {
   }
 
   private finish(): void {
+    clearTimeout(this.grace);
+    this.grace = undefined;
     const end = Date.now();
     // A sprint never resolves by finish order — its passage outlasts the
     // clock on purpose — so rank everyone by WPM (accuracy breaks a tie) the

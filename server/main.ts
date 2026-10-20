@@ -214,9 +214,11 @@ server.on("upgrade", (req, socket, head) => {
       ws.ping();
     }, 15_000);
 
-    ws.on("close", () => {
+    ws.on("close", (code) => {
       clearInterval(ping);
-      r.remove(conn);
+      // 1006: no close frame, the connection just dropped (wifi, a sleeping
+      // laptop, a pong that never came). Anything else, the page meant to go.
+      r.remove(conn, code === 1006);
       release(r);
     });
   });

@@ -132,3 +132,43 @@ it(
   },
   60_000,
 );
+
+it(
+  "keeps a race going through a dropped connection, and ends it if the racer never comes back",
+  async () => {
+    const room = freshRoom();
+    const cookie = await visitor();
+    const a = racer(cookie, room);
+    await a.opened;
+    a.send({ t: "mode", mode: "sprint" });
+    await a.until((s) => s.mode === "sprint", 1000);
+    a.send({ t: "join" });
+    await a.until((s) => s.phase === "countdown", 1000);
+    a.send({ t: "ready" });
+    await a.until((s) => s.phase === "racing", 4500);
+    for (let n = 4; n <= 40; n += 4) {
+      a.send({ t: "progress", n, errors: 0 });
+      await sleep(200);
+    }
+
+    // The only racer's socket drops (a wifi blip) and the page reconnects:
+    // the race is still on, and their progress is where they left it.
+    a.ws.terminate();
+    await sleep(1000);
+    const back = racer(cookie, room);
+    await back.opened;
+    const resumed = await back.until((s) => s.entrants.length === 1, 1000);
+    expect(resumed.phase).toBe("racing");
+    expect(resumed.entrants[0].progress).toBe(40);
+
+    // Dropping for good ends it soon after, rather than running out the clock.
+    back.ws.terminate();
+    const watcher = racer(await visitor(), room);
+    await watcher.opened;
+    const gone = Date.now();
+    await watcher.until((s) => s.phase === "results", 8000);
+    expect(Date.now() - gone).toBeLessThan(SPRINT_MS - 5000);
+    watcher.ws.close();
+  },
+  30_000,
+);
