@@ -79,7 +79,7 @@ function historyList(rows: HistoryRow[]): string {
   return `<ol class="history">${rows
     .map(
       (r) =>
-        `<li><span class="who">${r.place ? `${ordinal(r.place)} of ${r.field}` : "DNF"}${r.mode === "quotes" ? "" : ` · ${esc(r.mode)}`}</span><span class="num">${r.wpm.toFixed(0)} wpm · ${Math.round(r.accuracy * 100)}%</span></li>`,
+        `<li><span class="who">${r.place ? `${ordinal(r.place)} of ${r.field}` : "DNF"}${r.mode === "quotes" ? "" : ` · ${esc(r.mode)}`}</span><span class="num">${r.points !== null ? `${r.points.toLocaleString("en-AU")} pts · ` : ""}${r.wpm.toFixed(0)} wpm · ${Math.round(r.accuracy * 100)}%</span></li>`,
     )
     .join("")}</ol>`;
 }
@@ -109,12 +109,17 @@ export function roomPage(
       <button type="button" class="mode" role="radio" data-mode="words" aria-checked="false">Words</button>
       <button type="button" class="mode" role="radio" data-mode="code" aria-checked="false">Code</button>
       <button type="button" class="mode" role="radio" data-mode="sprint" aria-checked="false">Sprint (30s)</button>
+      <button type="button" class="mode" role="radio" data-mode="arcade" aria-checked="false">Arcade (45s)</button>
       <span id="mode-note" class="mode-note"></span>
       <button type="button" id="tape-toggle" class="tape-toggle" aria-pressed="false">Tape mode</button>
     </div>
     <ul id="lanes" class="lanes" aria-label="Racers"></ul>
     <div id="banner" class="banner" aria-hidden="true"></div>
     <div id="passage" class="passage" aria-hidden="true"></div>
+    <div id="arcade" class="arcade" hidden aria-hidden="true">
+      <span class="meter"><span id="combo" class="combo">0</span> combo</span>
+      <span id="mult" class="mult">×1</span>
+    </div>
     <p id="source" class="source"></p>
     <label class="typing">
       <span class="visually-hidden">Type the passage here</span>
@@ -134,7 +139,7 @@ export function roomPage(
         <ul id="legend" class="legend"></ul>
       </figure>
       <table class="results">
-        <thead><tr><th scope="col">#</th><th scope="col">Racer</th><th scope="col">WPM</th><th scope="col">Accuracy</th><th scope="col">Mistakes</th></tr></thead>
+        <thead><tr><th scope="col">#</th><th scope="col">Racer</th><th scope="col" class="arcade-col" hidden>Points</th><th scope="col" class="arcade-col" hidden>Best combo</th><th scope="col">WPM</th><th scope="col">Accuracy</th><th scope="col">Mistakes</th></tr></thead>
         <tbody id="results"></tbody>
       </table>
       <div id="who-tabs" class="who-tabs" role="tablist" aria-label="Whose typing to show"></div>

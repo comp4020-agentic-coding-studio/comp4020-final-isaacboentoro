@@ -1,10 +1,13 @@
+import { ARCADE_MS } from "./arcade.ts";
 import { quotes, randomQuote, type Quote } from "./quotes.ts";
 
 // What a race can be run on. Quotes are the default; words drops capitals and
 // punctuation for pure speed; code adds symbols, newlines and indentation;
 // sprint is words again, but an open-ended stream run against a clock instead
-// of a fixed passage, so the race is won on WPM rather than on finishing.
-export const MODES = ["quotes", "words", "code", "sprint"] as const;
+// of a fixed passage, so the race is won on WPM rather than on finishing;
+// arcade is the same stream played for points (arcade.ts): combos, clean-word
+// streaks and multipliers, so accuracy pays as much as speed.
+export const MODES = ["quotes", "words", "code", "sprint", "arcade"] as const;
 export type Mode = (typeof MODES)[number];
 
 export const isMode = (m: unknown): m is Mode => MODES.includes(m as Mode);
@@ -130,6 +133,12 @@ export function randomPassage(mode: Mode, exclude?: number): Quote {
       id: -2,
       text: randomWords(SPRINT_WORD_COUNT).join(" "),
       source: `${SPRINT_MS / 1000}s sprint · highest wpm wins`,
+    };
+  if (mode === "arcade")
+    return {
+      id: -3,
+      text: randomWords(SPRINT_WORD_COUNT).join(" "),
+      source: `${ARCADE_MS / 1000}s arcade · clean words build your multiplier`,
     };
   if (mode === "code") {
     const pool = snippets.filter((q) => q.id !== exclude);

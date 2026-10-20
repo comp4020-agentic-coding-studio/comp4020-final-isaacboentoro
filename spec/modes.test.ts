@@ -172,3 +172,46 @@ it(
   },
   30_000,
 );
+
+it(
+  "scores arcade on the server: clean words build a multiplier, a miss resets it, and points decide the winner",
+  async () => {
+    const room = freshRoom();
+    const [a, b] = await Promise.all([0, 1].map(async () => racer(await visitor(), room)));
+    await Promise.all([a.opened, b.opened]);
+    a.send({ t: "mode", mode: "arcade" });
+    await a.until((s) => s.mode === "arcade", 1000);
+    a.send({ t: "join" });
+    b.send({ t: "join" });
+    await a.until((s) => s.entrants.length === 2, 1000);
+    a.send({ t: "ready" });
+    b.send({ t: "ready" });
+    const started = await a.until((s) => s.phase === "racing", 4500);
+    const text = started.quote.text;
+    const ends = [...text.matchAll(/ /g)].map((m) => m.index! + 1); // just past each word
+
+    // A types six words clean, a word at a time; B types the same six but
+    // fumbles every word, so never builds a streak.
+    for (let w = 0; w < 6; w++) {
+      if (w > 0) b.send({ t: "progress", n: ends[w - 1], errors: w, miss: { i: ends[w - 1], got: "#" } });
+      a.send({ t: "progress", n: ends[w], errors: 0 });
+      b.send({ t: "progress", n: ends[w], errors: w + 1 });
+      await sleep(400);
+    }
+    const mid = await a.until((s) => s.entrants.every((e) => e.progress === ends[5]), 2000);
+    const [hi, lo] = mid.entrants.slice().sort((p, q) => q.points! - p.points!);
+    // same characters typed, but the clean typist is on x2 and well ahead
+    expect(hi.x).toBe(2);
+    expect(lo.x).toBe(1);
+    expect(hi.points!).toBeGreaterThan(lo.points! * 1.5);
+
+    // A's page claiming a huge score changes nothing: only progress counts
+    a.send({ t: "progress", n: ends[5], errors: 0, points: 1_000_000 });
+    await sleep(300);
+    expect(Math.max(...a.state.entrants.map((e) => e.points!))).toBe(hi.points);
+
+    a.ws.close();
+    b.ws.close();
+  },
+  30_000,
+);

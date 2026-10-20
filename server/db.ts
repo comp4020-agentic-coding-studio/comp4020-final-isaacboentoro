@@ -43,6 +43,10 @@ if (!playerCols.some((c) => c.name === "secret_hash")) {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS players_secret ON players(secret_hash)");
 }
 
+// An arcade result also keeps its score; every other mode leaves it null.
+const resultCols = db.prepare("PRAGMA table_info(results)").all() as { name: string }[];
+if (!resultCols.some((c) => c.name === "points")) db.exec("ALTER TABLE results ADD COLUMN points INTEGER");
+
 // Races from before modes existed were all quotes.
 const raceCols = db.prepare("PRAGMA table_info(races)").all() as { name: string }[];
 if (!raceCols.some((c) => c.name === "mode")) {
@@ -96,6 +100,7 @@ export interface Result {
   place: number | null;
   wpm: number;
   accuracy: number;
+  points?: number;
 }
 
 export function saveRace(
@@ -113,9 +118,11 @@ export function saveRace(
       )
       .run(room, mode, quoteId, startedAt, Date.now());
     const insert = db.prepare(
-      "INSERT INTO results (race_id, player_id, place, wpm, accuracy) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO results (race_id, player_id, place, wpm, accuracy, points) VALUES (?, ?, ?, ?, ?, ?)",
     );
-    for (const r of results) insert.run(lastInsertRowid, r.playerId, r.place, r.wpm, r.accuracy);
+    for (const r of results) {
+      insert.run(lastInsertRowid, r.playerId, r.place, r.wpm, r.accuracy, r.points ?? null);
+    }
     db.exec("COMMIT");
     return Number(lastInsertRowid);
   } catch (err) {
@@ -156,12 +163,13 @@ export interface HistoryRow {
   field: number;
   wpm: number;
   accuracy: number;
+  points: number | null;
 }
 
 export function history(playerId: string, limit = 10): HistoryRow[] {
   return db
     .prepare(
-      `SELECT ra.id AS raceId, ra.mode, ra.finished_at AS finishedAt, r.place, r.wpm, r.accuracy,
+      `SELECT ra.id AS raceId, ra.mode, ra.finished_at AS finishedAt, r.place, r.wpm, r.accuracy, r.points,
               (SELECT COUNT(*) FROM results x WHERE x.race_id = ra.id) AS field
          FROM results r JOIN races ra ON ra.id = r.race_id
         WHERE r.player_id = ?

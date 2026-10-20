@@ -1,5 +1,6 @@
 import type { WebSocket } from "ws";
 import { history, leaderboard, publicId, saveRace, type Player } from "./db.ts";
+import { advance, ARCADE_MS, fresh, miss as missed, multiplier, type Score } from "./arcade.ts";
 import { isMode, randomPassage, SPRINT_MS, type Mode } from "./passages.ts";
 import type { Quote } from "./quotes.ts";
 
@@ -37,6 +38,7 @@ interface Entrant {
   // for the post-race summary: progress over time, and every wrong keystroke
   samples: Array<[ms: number, progress: number]>;
   misses: Miss[];
+  score: Score; // arcade only; kept for every mode so it's never missing
 }
 
 interface Miss {
@@ -159,6 +161,7 @@ export class Room {
         ready: false,
         samples: [],
         misses: [],
+        score: fresh(),
       });
     }
     if (this.phase === "lobby") this.setPhase("countdown", COUNTDOWN_MS, () => this.start());
@@ -223,7 +226,10 @@ export class Room {
       e.misses.length < MAX_MISSES
     ) {
       e.misses.push({ i: m.i!, got: m.got, t: now - this.startedAt });
+      missed(e.score);
     }
+    // arcade scores what the server accepted, never what the page claims
+    if (this.mode === "arcade") advance(e.score, this.quote.text, e.progress);
     e.errors = Math.max(e.errors, e.misses.length, Math.min(errors, 10_000));
     const last = e.samples[e.samples.length - 1];
     if (!last || last[1] !== e.progress) e.samples.push([now - this.startedAt, e.progress]);
@@ -241,7 +247,7 @@ export class Room {
 
   private start(): void {
     this.startedAt = Date.now();
-    const limit = this.mode === "sprint" ? SPRINT_MS : RACE_LIMIT_MS;
+    const limit = this.mode === "sprint" ? SPRINT_MS : this.mode === "arcade" ? ARCADE_MS : RACE_LIMIT_MS;
     this.setPhase("racing", limit, () => this.finish());
     this.broadcast();
   }
@@ -253,9 +259,12 @@ export class Room {
     // A sprint never resolves by finish order — its passage outlasts the
     // clock on purpose — so rank everyone by WPM (accuracy breaks a tie) the
     // instant time runs out, instead of leaving them all a DNF.
-    if (this.mode === "sprint") {
+    // An arcade game is the same, ranked on points.
+    if (this.mode === "sprint" || this.mode === "arcade") {
+      const by = (e: Entrant) =>
+        this.mode === "arcade" ? e.score.points : wpm(e.progress, end - this.startedAt);
       const ranked = [...this.entrants.values()].sort((a, b) => {
-        const diff = wpm(b.progress, end - this.startedAt) - wpm(a.progress, end - this.startedAt);
+        const diff = by(b) - by(a);
         return diff !== 0 ? diff : accuracy(b.progress, b.errors) - accuracy(a.progress, a.errors);
       });
       ranked.forEach((e, k) => {
@@ -268,6 +277,7 @@ export class Room {
       place: e.place,
       wpm: wpm(e.progress, (e.finishedAt ?? end) - this.startedAt),
       accuracy: accuracy(e.progress, e.errors),
+      ...(this.mode === "arcade" ? { points: e.score.points } : {}),
     }));
     saveRace(this.id, this.mode, this.quote.id, this.startedAt, results);
     this.summary = {
@@ -284,6 +294,7 @@ export class Room {
         accuracy: results[k].accuracy,
         misses: e.misses,
         series: series(e.samples, (e.finishedAt ?? end) - this.startedAt),
+        ...(this.mode === "arcade" ? { points: e.score.points, bestCombo: e.score.best } : {}),
       })),
     };
     this.setPhase("results", RESULTS_MS, () => this.toLobby());
@@ -336,6 +347,9 @@ export class Room {
         finished: e.finishedAt !== null,
         ready: e.ready,
         wpm: racing ? wpm(e.progress, (e.finishedAt ?? now) - this.startedAt) : 0,
+        ...(this.mode === "arcade"
+          ? { points: e.score.points, combo: e.score.combo, x: multiplier(e.score.streak) }
+          : {}),
       })),
     };
   }

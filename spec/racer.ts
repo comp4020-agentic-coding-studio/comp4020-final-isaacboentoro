@@ -11,10 +11,14 @@ export interface Entrant {
   finished: boolean;
   place: number | null;
   ready: boolean;
+  // arcade only
+  points?: number;
+  combo?: number;
+  x?: number;
 }
 export interface RoomState {
   phase: "lobby" | "countdown" | "racing" | "results";
-  mode: "quotes" | "words" | "code" | "sprint";
+  mode: "quotes" | "words" | "code" | "sprint" | "arcade";
   endsAt: number;
   now: number;
   quote: { text: string };

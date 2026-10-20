@@ -32,6 +32,11 @@ How each multi-user decision was weighed against this is in
 - **Sprint** — an open-ended stream of random words against a 30-second
   clock; nobody finishes it, so the race is won on WPM (accuracy breaking a
   tie) at the buzzer.
+- **Arcade** — the same endless stream for 45 seconds, played for points.
+  Every correct letter scores and builds your combo; every word typed without
+  a mistake builds a streak that lifts your multiplier (×2 at 5 clean words,
+  ×3 at 15, ×4 at 30), and one mistake drops it back to ×1. The server keeps
+  the score from your keystrokes, so the page can show it but never claim it.
 
 ## Themes
 

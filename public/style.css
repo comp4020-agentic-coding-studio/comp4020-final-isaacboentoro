@@ -346,6 +346,46 @@ body.focus .passage.tape { max-height: none; }
 }
 .source { color: var(--dim); font-size: 0.9rem; margin: 0.5rem 0 1rem; }
 
+/* arcade: your combo and multiplier, between the passage and the box. The
+   multiplier warms through the theme's own colours as your streak climbs,
+   and each +points pops up off the meter. */
+.arcade {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
+  margin: 0.75rem 0 0;
+  font-family: var(--mono);
+  color: var(--dim);
+}
+.arcade[hidden] { display: none; }
+.arcade .combo { font-size: 1.6rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.arcade.hot .combo { color: var(--accent); }
+.arcade .mult {
+  display: inline-block;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--dim);
+  transition: color 200ms;
+}
+/* the tiers climb text → accent → mistake-red: colours every theme clears
+   for text, unlike the racers' palette, which only has to read as a bar */
+.arcade[data-x="2"] .mult { color: var(--text); }
+.arcade[data-x="3"] .mult { color: var(--accent); }
+.arcade[data-x="4"] .mult { color: var(--bad); }
+.arcade .pop {
+  position: absolute;
+  left: 9rem;
+  bottom: 0.2rem;
+  /* large bold, like the meter: mistake-red only has to clear 3:1 there */
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text);
+  pointer-events: none;
+}
+.arcade .pop[data-x="3"] { color: var(--accent); }
+.arcade .pop[data-x="4"] { color: var(--bad); }
+
 .typing textarea {
   display: block;
   resize: none;

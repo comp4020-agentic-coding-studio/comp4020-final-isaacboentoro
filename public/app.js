@@ -31,6 +31,10 @@ const el = {
   whoTabs: $("who-tabs"),
   replay: $("replay"),
   replayNote: $("replay-note"),
+  arcade: $("arcade"),
+  arcadeCols: [...document.querySelectorAll(".results .arcade-col")],
+  combo: $("combo"),
+  mult: $("mult"),
 };
 
 let ws;
@@ -335,8 +339,11 @@ function render() {
             : "Race under way. Join the next one when it ends.";
 
   el.live.textContent = entrant && (racing || results)
-    ? `${Math.round(entrant.wpm)} wpm · ${accuracyPct()}%`
+    ? state.mode === "arcade"
+      ? `${(entrant.points ?? 0).toLocaleString()} pts · ${Math.round(entrant.wpm)} wpm`
+      : `${Math.round(entrant.wpm)} wpm · ${accuracyPct()}%`
     : "";
+  renderArcade(entrant, racing);
 
   el.summary.hidden = !summary || racing;
   tick();
@@ -365,10 +372,12 @@ function renderLanes(lanes, colour, racing) {
     const pct = Math.round((e.progress / text.length) * 100);
     li.querySelector(".bar span").style.width = `${pct}%`;
     li.querySelector(".who").textContent = e.name + (e.id === me.id ? " (you)" : "");
+    // arcade races on points; everything else on pace
+    const pace = state.mode === "arcade" ? `${(e.points ?? 0).toLocaleString()} pts` : `${Math.round(e.wpm)} wpm`;
     const num = e.finished
-      ? `${ordinal(e.place)} · ${Math.round(e.wpm)} wpm`
+      ? `${ordinal(e.place)} · ${pace}`
       : racing || state.phase === "results"
-        ? `${Math.round(e.wpm)} wpm`
+        ? pace
         : e.ready
           ? "ready ✓"
           : "joined";
@@ -397,6 +406,58 @@ function renderLanes(lanes, colour, racing) {
       if (dy) li.animate([{ transform: `translateY(${dy}px)` }, {}], { duration: 300, easing: EASE });
     }
   }
+}
+
+// Arcade's combo meter and the points that pop off it. The server keeps the
+// score; this only shows what it says, and pops whatever it added since.
+let lastPoints = 0;
+let lastX = 1;
+function renderArcade(entrant, racing) {
+  const on = state.mode === "arcade" && racing && entrant && !entrant.finished;
+  el.arcade.hidden = !on;
+  if (!on) {
+    lastPoints = entrant?.points ?? 0;
+    lastX = 1;
+    return;
+  }
+  const { points = 0, combo = 0, x = 1 } = entrant;
+  el.combo.textContent = combo;
+  el.mult.textContent = `×${x}`;
+  el.arcade.dataset.x = x;
+  el.arcade.classList.toggle("hot", combo >= 20);
+  const gained = points - lastPoints;
+  if (gained > 0 && motion()) pop(`+${gained}`, x);
+  if (x > lastX && motion()) {
+    el.mult.animate([{ transform: "scale(1.8)" }, {}], { duration: 380, easing: EASE });
+  } else if (x < lastX && motion()) {
+    el.arcade.animate(
+      [{ transform: "translateX(-6px)" }, { transform: "translateX(6px)" }, { transform: "translateX(-3px)" }, {}],
+      { duration: 280 },
+    );
+  }
+  lastPoints = points;
+  lastX = x;
+}
+
+// One pop at a time: at typing speed they'd otherwise stack into a smear, so
+// a new one replaces whatever's still floating.
+function pop(text, x) {
+  el.arcade.querySelector(".pop")?.remove();
+  const p = document.createElement("span");
+  p.className = "pop";
+  p.dataset.x = x;
+  p.textContent = text;
+  el.arcade.append(p);
+  // It rises and is wiped away from the bottom up rather than fading:
+  // half-faded text is unreadable text, and nothing about a +200 should be.
+  p.animate(
+    [
+      { transform: "translateY(0)", clipPath: "inset(0 0 0 0)" },
+      { transform: "translateY(-0.6rem)", clipPath: "inset(0 0 0 0)", offset: 0.55 },
+      { transform: "translateY(-1.4rem)", clipPath: "inset(0 0 100% 0)" },
+    ],
+    { duration: 700, easing: "ease-out" },
+  ).finished.then(() => p.remove());
 }
 
 function accuracyPct() {
@@ -681,6 +742,7 @@ function renderSummary() {
   const race = summary;
   const colour = colours(race.entrants);
   el.summaryMeta.textContent = `${race.mode} · ${race.source} · ${race.seconds}s`;
+  for (const th of el.arcadeCols) th.hidden = race.mode !== "arcade";
 
   // results table
   el.results.replaceChildren(
@@ -693,6 +755,7 @@ function renderSummary() {
         const cells = [
           e.place ? ordinal(e.place) : "DNF",
           e.name + (e.id === me.id ? " (you)" : ""),
+          ...(race.mode === "arcade" ? [(e.points ?? 0).toLocaleString(), e.bestCombo ?? 0] : []),
           Math.round(e.wpm),
           pct(e.accuracy),
           e.misses.length,
@@ -925,7 +988,8 @@ function historyList(rows) {
       row(
         (r.place ? `${ordinal(r.place)} of ${r.field}` : "DNF") +
           (r.mode === "quotes" ? "" : ` · ${r.mode}`),
-        `${Math.round(r.wpm)} wpm · ${Math.round(r.accuracy * 100)}%`,
+        (r.points !== null && r.points !== undefined ? `${r.points.toLocaleString()} pts · ` : "") +
+          `${Math.round(r.wpm)} wpm · ${Math.round(r.accuracy * 100)}%`,
       ),
     );
   return ol;
