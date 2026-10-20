@@ -8,6 +8,25 @@ export const esc = (s: string): string =>
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
 
+// The themes the header's picker offers; each one's colours are in
+// style.css under :root[data-theme="…"].
+const THEMES: Array<[id: string, label: string]> = [
+  ["keyrace-dark", "keyrace dark"],
+  ["keyrace-light", "keyrace light"],
+  ["gruvbox-dark", "Gruvbox dark"],
+  ["gruvbox-light", "Gruvbox light"],
+  ["adwaita-dark", "Adwaita dark"],
+  ["adwaita-light", "Adwaita light"],
+  ["catppuccin-mocha", "Catppuccin Mocha"],
+  ["catppuccin-latte", "Catppuccin Latte"],
+  ["nord", "Nord"],
+  ["dracula", "Dracula"],
+  ["solarized-dark", "Solarized dark"],
+  ["solarized-light", "Solarized light"],
+  ["tokyo-night", "Tokyo Night"],
+  ["rose-pine", "Rosé Pine"],
+];
+
 function layout(title: string, body: string, extraHead = ""): string {
   return `<!doctype html>
 <html lang="en-AU">
@@ -16,14 +35,31 @@ function layout(title: string, body: string, extraHead = ""): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <link rel="stylesheet" href="/static/style.css">
+<script>
+  // before the first paint, so a chosen theme never flashes the default
+  try {
+    const t = localStorage.getItem("keyrace-theme");
+    if (t) document.documentElement.dataset.theme = t;
+  } catch {}
+</script>
 ${extraHead}
 </head>
 <body>
 <header class="top">
   <a class="brand" href="/">keyrace</a>
-  <nav><a href="/readme/">about</a></nav>
+  <nav>
+    <label class="theme-pick">
+      <span class="visually-hidden">Theme</span>
+      <select id="theme">
+        <option value="">Theme: match system</option>
+        ${THEMES.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join("")}
+      </select>
+    </label>
+    <a href="/readme/">about</a>
+  </nav>
 </header>
 ${body}
+<script type="module" src="/static/theme.js"></script>
 </body>
 </html>`;
 }

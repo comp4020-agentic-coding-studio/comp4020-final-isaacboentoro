@@ -33,6 +33,14 @@ How each multi-user decision was weighed against this is in
   clock; nobody finishes it, so the race is won on WPM (accuracy breaking a
   tie) at the buzzer.
 
+## Themes
+
+The picker in the header switches the whole page between keyrace's own light
+and dark, Gruvbox, Adwaita, Catppuccin, Nord, Dracula, Solarized, Tokyo Night
+and Rosé Pine — or, left alone, follows the system's light or dark. Each uses
+its palette's published colours, nudged only where a pairing fell short of
+readable contrast. The choice is remembered per browser.
+
 ## Running it
 
 ```sh
