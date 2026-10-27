@@ -410,8 +410,13 @@ body.focus .passage.tape { max-height: none; }
 }
 .modes .mode[aria-checked="true"] { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
 .mode-note { color: var(--dim); font-size: 0.8rem; margin-left: 0.5rem; }
+/* Unlike the mode buttons (locked once a race is on), this is a per-browser
+   display preference, not a race setting — it stays reachable throughout
+   the race, floated above the lanes rather than inside the (hidden-while-
+   racing) mode bar it used to share. */
 .tape-toggle {
-  margin-left: auto;
+  display: block;
+  margin: 0 0 0.5rem auto;
   font: 600 0.8rem var(--mono);
   padding: 0.3rem 0.7rem;
   background: var(--panel);

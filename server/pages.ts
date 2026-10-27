@@ -111,8 +111,8 @@ export function roomPage(
       <button type="button" class="mode" role="radio" data-mode="sprint" aria-checked="false">Sprint (30s)</button>
       <button type="button" class="mode" role="radio" data-mode="arcade" aria-checked="false">Arcade (45s)</button>
       <span id="mode-note" class="mode-note"></span>
-      <button type="button" id="tape-toggle" class="tape-toggle" aria-pressed="false">Tape mode</button>
     </div>
+    <button type="button" id="tape-toggle" class="tape-toggle" aria-pressed="false">Tape mode</button>
     <ul id="lanes" class="lanes" aria-label="Racers"></ul>
     <div id="banner" class="banner" aria-hidden="true"></div>
     <div id="passage" class="passage" aria-hidden="true"></div>
