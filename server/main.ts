@@ -187,6 +187,9 @@ server.on("upgrade", (req, socket, head) => {
       } catch {
         return;
       }
+      // JSON.parse accepts top-level null/numbers/strings/arrays too; none of
+      // those have a `.t` to read, and an object is the only shape we handle.
+      if (typeof msg !== "object" || msg === null) return;
       // the page times the round trip to line its clock up with ours
       if (msg.t === "ping" && typeof msg.c === "number") ws.send(JSON.stringify({ t: "pong", c: msg.c, s: Date.now() }));
       else if (msg.t === "join") r.join(conn.player);
@@ -203,6 +206,11 @@ server.on("upgrade", (req, socket, head) => {
         r.rename(conn.player);
       }
     });
+
+    // An unhandled "error" event is an uncaught exception in Node, so with no
+    // listener here a single oversized frame (over `maxPayload`) or a bad
+    // frame takes the whole process down, not just this one connection.
+    ws.on("error", () => ws.terminate());
 
     // A dropped connection can sit half-open for minutes; ping it so the room
     // stops waiting on someone who's gone.
