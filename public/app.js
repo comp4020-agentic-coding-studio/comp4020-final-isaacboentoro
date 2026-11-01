@@ -367,7 +367,8 @@ function renderLanes(lanes, colour, racing) {
       li.innerHTML = `<span class="who"></span><span class="bar"><span></span></span><span class="num"></span>`;
       laneEls.set(e.id, li);
     }
-    li.className = e.id === me.id ? "me" : "";
+    // .done flashes the bar once (style.css) the moment its racer finishes
+    li.className = [e.id === me.id ? "me" : "", e.finished ? "done" : ""].join(" ").trim();
     li.style.setProperty("--c", colour.get(e.id));
     const pct = Math.round((e.progress / text.length) * 100);
     li.querySelector(".bar span").style.width = `${pct}%`;
@@ -538,7 +539,10 @@ function renderBanner(left) {
   if (bannerBig.textContent !== big) {
     bannerBig.textContent = big;
     if (big && motion()) {
-      bannerBig.animate([{ opacity: 0, transform: "scale(1.6)" }, {}], { duration: 280, easing: EASE });
+      bannerBig.animate(
+        [{ opacity: 0, transform: "translateY(-0.6em) scale(1.3)" }, { opacity: 1, transform: "translateY(0.05em)", offset: 0.7 }, {}],
+        { duration: 260, easing: "cubic-bezier(0.2, 0.9, 0.1, 1)" },
+      );
     }
   }
   if (bannerLine.dataset.html !== line) {
@@ -662,6 +666,7 @@ el.input.addEventListener("input", () => {
   if (full.length > prevTyped.length && full[full.length - 1] !== text[full.length - 1]) {
     errors++;
     miss = { i: full.length - 1, got: full[full.length - 1] };
+    jolt();
   }
   // After a correct newline the next line's indent comes for free — each
   // space it adds closes out its own one-character "word" below.
@@ -676,6 +681,16 @@ el.input.addEventListener("input", () => {
   send({ t: "progress", n: correctPrefix(), errors, miss });
   render();
 });
+
+// A wrong letter jolts the box once. Restarting the class each time means a
+// run of mistakes keeps jolting rather than playing once and going quiet.
+function jolt() {
+  if (!motion()) return;
+  el.input.classList.remove("jolt");
+  void el.input.offsetWidth;
+  el.input.classList.add("jolt");
+}
+el.input.addEventListener("animationend", () => el.input.classList.remove("jolt"));
 
 // Paste would make the anti-cheat clamp the only defence; just refuse it.
 el.input.addEventListener("paste", (e) => e.preventDefault());
@@ -749,9 +764,10 @@ function renderSummary() {
     ...race.entrants
       .slice()
       .sort(byPlace)
-      .map((e) => {
+      .map((e, k) => {
         const tr = document.createElement("tr");
         if (e.id === me.id) tr.className = "me";
+        tr.style.setProperty("--i", k);
         const cells = [
           e.place ? ordinal(e.place) : "DNF",
           e.name + (e.id === me.id ? " (you)" : ""),
@@ -895,7 +911,9 @@ function renderChart(race, colour) {
   for (const e of lines) {
     const c = colour.get(e.id);
     const d = e.series.map((p, k) => `${k ? "L" : "M"}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
-    root.append(svg("path", { class: "series", d, style: `stroke:${c}` }));
+    const series = svg("path", { class: "series", d, style: `stroke:${c}` });
+    root.append(series);
+    requestAnimationFrame(() => series.style.setProperty("--len", Math.ceil(series.getTotalLength())));
     for (const mi of e.misses) {
       const t = mi.t / 1000;
       if (t < e.series[0][0]) continue;
@@ -913,7 +931,8 @@ function renderChart(race, colour) {
     labels.sort((a, b) => a.y - b.y);
     for (let k = 1; k < labels.length; k++) labels[k].y = Math.max(labels[k].y, labels[k - 1].y + 14);
     for (const l of labels) {
-      root.append(svg("circle", { cx: l.x, cy: y(l.e.series.at(-1)[1]), r: 4, class: "end", style: `fill:${l.c}` }));
+      const cy = y(l.e.series.at(-1)[1]);
+      root.append(svg("rect", { x: l.x - 4, y: cy - 4, width: 8, height: 8, class: "end", style: `fill:${l.c}` }));
       const t = svg("text", { class: "label", x: l.x + 8, y: l.y + 4 });
       const name = l.e.id === me.id ? "you" : l.e.name;
       const room = W < 500 ? 6 : 10;
@@ -975,7 +994,11 @@ function boardList(rows) {
   if (rows.length === 0) return para("No finished races yet.");
   const ol = document.createElement("ol");
   ol.className = "board";
-  for (const r of rows) ol.append(row(r.name, `${Math.round(r.wpm)} wpm`, r.id === me.id));
+  rows.forEach((r, i) => {
+    const li = row(r.name, `${Math.round(r.wpm)} wpm`, r.id === me.id);
+    li.style.setProperty("--i", i);
+    ol.append(li);
+  });
   return ol;
 }
 
