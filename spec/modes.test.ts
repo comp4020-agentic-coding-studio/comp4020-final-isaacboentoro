@@ -174,6 +174,49 @@ it(
 );
 
 it(
+  "doesn't cut a dropped racer's grace short when someone else finishes during it",
+  async () => {
+    const room = freshRoom();
+    const ca = await visitor();
+    const a = racer(ca, room);
+    const b = racer(await visitor(), room);
+    await Promise.all([a.opened, b.opened]);
+    a.send({ t: "mode", mode: "words" });
+    await a.until((s) => s.mode === "words", 1000);
+    a.send({ t: "join" });
+    b.send({ t: "join" });
+    await a.until((s) => s.entrants.length === 2, 1000);
+    a.send({ t: "ready" });
+    b.send({ t: "ready" });
+    const started = await a.until((s) => s.phase === "racing", 4500);
+    const length = started.quote.text.length;
+    a.send({ t: "progress", n: 5, errors: 0 });
+
+    // A's wifi blips; B, still connected, finishes while A is in grace.
+    // Wait first so B's full-passage claim clears the typing-speed cap.
+    await sleep(Math.ceil((length / 25) * 1000));
+    a.ws.terminate();
+    await sleep(100);
+    b.send({ t: "progress", n: length, errors: 0 });
+    await b.until((s) => s.entrants.some((e) => e.finished), 1000);
+    await sleep(500);
+    expect(b.state.phase).toBe("racing");
+
+    // A comes back inside the grace window and can still finish.
+    const back = racer(ca, room);
+    await back.opened;
+    const resumed = await back.until((s) => s.entrants.length === 2, 1000);
+    expect(resumed.phase).toBe("racing");
+    back.send({ t: "progress", n: length, errors: 0 });
+    const done = await back.until((s) => s.phase === "results", 2000);
+    expect(done.entrants.every((e) => e.finished)).toBe(true);
+    back.ws.close();
+    b.ws.close();
+  },
+  30_000,
+);
+
+it(
   "scores arcade on the server: clean words build a multiplier, a miss resets it, and points decide the winner",
   async () => {
     const room = freshRoom();

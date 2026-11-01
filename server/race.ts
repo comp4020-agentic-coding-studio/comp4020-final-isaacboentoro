@@ -63,6 +63,8 @@ export class Room {
   private summary: object | null = null;
   private timer: NodeJS.Timeout | undefined;
   private grace: NodeJS.Timeout | undefined;
+  // when each racer's connection last dropped mid-race (close code 1006)
+  private droppedAt = new Map<string, number>();
   private dirty = false;
   // The passage only changes between races, but state goes out ten times a
   // second mid-race; it rides along only when it's new to the room, or to a
@@ -100,6 +102,7 @@ export class Room {
     // the newcomer gets the passage in full; everyone else just the change
     this.broadcast();
     this.conns.add(conn);
+    this.droppedAt.delete(conn.player.id); // back: no longer in grace
     this.send(conn, { t: "state", room: this.snapshot(true) });
   }
 
@@ -113,18 +116,39 @@ export class Room {
       if (this.entrants.size === 0) this.toLobby();
       else this.maybeStartEarly();
     }
-    // Nobody left to wait for: end the race rather than run out the clock.
-    // A closed tab means it at once; a dropped connection gets a moment,
-    // since the page reconnects within a second or two and picks up where it
-    // was, and a blip shouldn't cost anyone their race.
-    if (this.phase === "racing" && !this.racerPresent()) {
-      if (!dropped) return this.finish();
-      this.grace ??= setTimeout(() => {
-        this.grace = undefined;
-        if (this.phase === "racing" && !this.racerPresent()) this.finish();
-      }, GRACE_MS);
+    if (this.phase === "racing" && !stillHere) {
+      if (dropped) this.droppedAt.set(conn.player.id, Date.now());
+      else this.droppedAt.delete(conn.player.id);
+      if (this.settle()) return;
     }
     this.broadcast();
+  }
+
+  // Nobody left to wait for: end the race rather than run out the clock.
+  // A closed tab means at once; a dropped connection gets a moment, since
+  // the page reconnects within a second or two and picks up where it was,
+  // and a blip shouldn't cost anyone their race — not even when someone
+  // else finishes while they're gone. Returns whether the race ended.
+  private settle(): boolean {
+    if (this.phase !== "racing" || this.racerPresent()) return false;
+    const now = Date.now();
+    const present = new Set([...this.conns].map((c) => c.player.id));
+    let waitUntil = 0;
+    for (const e of this.entrants.values()) {
+      if (e.finishedAt !== null || present.has(e.id)) continue;
+      const at = this.droppedAt.get(e.id);
+      if (at !== undefined && now - at < GRACE_MS) waitUntil = Math.max(waitUntil, at + GRACE_MS);
+    }
+    if (!waitUntil) {
+      this.finish();
+      return true;
+    }
+    clearTimeout(this.grace);
+    this.grace = setTimeout(() => {
+      this.grace = undefined;
+      this.settle();
+    }, waitUntil - now);
+    return false;
   }
 
   // Is anyone still racing actually connected?
@@ -237,10 +261,7 @@ export class Room {
     if (e.progress === this.quote.text.length) {
       e.finishedAt = now;
       e.place = [...this.entrants.values()].filter((x) => x.finishedAt !== null).length;
-      if (!this.racerPresent()) {
-        this.finish();
-        return;
-      }
+      if (this.settle()) return;
     }
     this.dirty = true;
   }
@@ -255,6 +276,7 @@ export class Room {
   private finish(): void {
     clearTimeout(this.grace);
     this.grace = undefined;
+    this.droppedAt.clear();
     const end = Date.now();
     // A sprint never resolves by finish order — its passage outlasts the
     // clock on purpose — so rank everyone by WPM (accuracy breaks a tie) the
