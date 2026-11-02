@@ -21,9 +21,11 @@ export interface RoomState {
   mode: "quotes" | "words" | "code" | "sprint" | "arcade";
   endsAt: number;
   now: number;
-  quote: { text: string };
+  quote: { text: string; source?: string };
   entrants: Entrant[];
   queued: string[];
+  // distinct people with the room open, racing or not
+  watching?: number;
 }
 
 export interface Summary {
@@ -34,6 +36,7 @@ export interface Summary {
     name: string;
     place: number | null;
     wpm: number;
+    accuracy?: number;
     misses: Array<{ i: number; got: string; t: number }>;
     series: Array<[number, number]>;
   }>;

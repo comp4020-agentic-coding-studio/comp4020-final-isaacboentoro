@@ -193,8 +193,11 @@ it(
     a.send({ t: "progress", n: 5, errors: 0 });
 
     // A's wifi blips; B, still connected, finishes while A is in grace.
-    // Wait first so B's full-passage claim clears the typing-speed cap.
-    await sleep(Math.ceil((length / 25) * 1000));
+    // Wait first so B's full-passage claim clears the typing-speed cap — at
+    // a human pace, not the cap's: every spec result lands on the real
+    // leaderboard, and ~295 wpm runs would crowd out the ones other specs
+    // look for there.
+    await sleep(Math.ceil((length / 12) * 1000));
     a.ws.terminate();
     await sleep(100);
     b.send({ t: "progress", n: length, errors: 0 });
