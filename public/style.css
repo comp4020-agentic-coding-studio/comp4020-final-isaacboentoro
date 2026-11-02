@@ -638,6 +638,17 @@ button.beckon { animation: beckon-btn 1.6s ease-in-out infinite; }
 .readme { max-width: 70ch; margin: 0 auto; padding: 0 1rem 3rem; }
 .readme h1 { font-size: 2rem; color: var(--text); margin: 1rem 0; }
 .readme img { max-width: 100%; }
+.readme .play { margin: 1rem 0 0; color: var(--dim); font-size: 0.9rem; }
+.readme .cta {
+  display: inline-block;
+  margin-right: 0.5rem;
+  font: 700 1rem var(--mono);
+  padding: 0.55rem 1rem;
+  background: var(--accent);
+  color: var(--on-accent);
+  text-decoration: none;
+  box-shadow: var(--lift);
+}
 
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; overflow: hidden;

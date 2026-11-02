@@ -34,6 +34,8 @@ function layout(title: string, body: string, extraHead = ""): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
+<!-- no icon: says so up front, so the browser doesn't log a 404 asking for one -->
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/static/style.css">
 <script>
   // before the first paint, so a chosen theme never flashes the default
@@ -181,7 +183,23 @@ export function roomPage(
   );
 }
 
+// Anyone arriving at the about page first needs the way in before the
+// prose, so it opens with a link to the track.
+const PLAY = `<p class="play"><a class="cta" href="/">Race now →</a> <span>on the main track, or open a room of your own from its sidebar</span></p>`;
+
 export function readmePage(): string {
   const md = readFileSync("README.md", "utf8");
-  return layout("keyrace · about", `<main class="readme">${marked.parse(md, { async: false })}</main>`);
+  return layout("keyrace · about", `<main class="readme">${PLAY}${marked.parse(md, { async: false })}</main>`);
+}
+
+// The docs the README links to (docs/….md, relative to the repo root, so
+// /readme/docs/… from here), rendered the same way rather than as raw text.
+export function docPage(file: string): string | null {
+  let md: string;
+  try {
+    md = readFileSync(`docs/${file}`, "utf8");
+  } catch {
+    return null;
+  }
+  return layout(`keyrace · ${file.replace(/\.md$/, "")}`, `<main class="readme">${PLAY}${marked.parse(md, { async: false })}</main>`);
 }

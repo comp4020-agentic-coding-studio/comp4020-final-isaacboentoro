@@ -5,7 +5,7 @@ import { extname, join, normalize } from "node:path";
 import { gzipSync } from "node:zlib";
 import { WebSocketServer } from "ws";
 import { createPlayer, playerBySecret, renamePlayer, type Player } from "./db.ts";
-import { readmePage, roomPage } from "./pages.ts";
+import { docPage, readmePage, roomPage } from "./pages.ts";
 import { boardFor, release, room, type Conn } from "./race.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -149,8 +149,13 @@ const server = createServer(async (req, res) => {
     }
     if (path === "/readme") return redirect(res, "/readme/");
     if (path === "/readme/") return html(res, readmePage());
-    // README images are linked relative to the repo root (docs/…), which
-    // from /readme/ resolves to /readme/docs/…
+    // README images and docs are linked relative to the repo root (docs/…),
+    // which from /readme/ resolves to /readme/docs/…
+    const doc = path.match(/^\/readme\/docs\/([a-z0-9-]+\.md)$/);
+    if (doc) {
+      const page = docPage(doc[1]);
+      return page ? html(res, page) : notFound(res);
+    }
     if (path.startsWith("/readme/docs/")) return serveFile(req, res, docsDir, path.slice(13));
     if (path.startsWith("/static/")) return serveFile(req, res, publicDir, path.slice(8));
     if (path === "/api/board") {
