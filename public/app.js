@@ -64,15 +64,22 @@ el.tapeToggle.setAttribute("aria-pressed", String(tape));
 
 // Reconnects back off (with jitter) rather than every second on the dot: a
 // deploy drops every socket at once, and they shouldn't all knock together.
+// Mid-race the wait never grows past a couple of seconds, though: the server
+// holds a dropped racer's place for five (race.ts GRACE_MS), and a backoff
+// that sleeps through it costs them the race.
 let retries = 0;
+let retry;
 
 function connect() {
+  clearTimeout(retry);
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(roomId)}`);
   ws.onopen = () => {
     retries = 0;
     best = Infinity;
     syncClock();
+    // whatever was typed while the line was down goes up now
+    if (state?.phase === "racing" && typed) send({ t: "progress", n: correctPrefix(), errors });
   };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
@@ -83,12 +90,17 @@ function connect() {
   };
   ws.onclose = () => {
     el.phase.textContent = "Lost the connection. Reconnecting…";
-    el.input.disabled = true;
+    // Mid-race the box stays live, so a blip doesn't eat your keystrokes
+    // (or your focus); everything else waits for the line to come back.
+    const racing = state?.phase === "racing" && mine() && !mine().finished;
+    if (!racing) el.input.disabled = true;
     el.join.disabled = true;
-    const wait = Math.min(10_000, 500 * 2 ** retries++);
-    setTimeout(connect, wait / 2 + Math.random() * (wait / 2));
+    const wait = Math.min(racing ? 2_000 : 10_000, 500 * 2 ** retries++);
+    retry = setTimeout(connect, wait / 2 + Math.random() * (wait / 2));
   };
 }
+// The network coming back is the moment to try, not whenever the backoff says.
+addEventListener("online", () => ws.readyState === WebSocket.CLOSED && connect());
 
 // The server's clock, which owns every countdown. Each ping's round trip
 // bounds how stale its timestamp was; the tightest one seen is the one to
@@ -120,6 +132,18 @@ function onState(room) {
     typed = "";
     errors = 0;
     el.input.value = "";
+  }
+  // A page loaded mid-race (a reload, Back, a second tab) picks up where the
+  // server has you, rather than at the start — whose first keystroke would
+  // otherwise report you back there. What the server holds is always a
+  // correct prefix, so it can be typed back in as is. Only the first state,
+  // though: later ones can trail a backspace and would undo it.
+  const e = room.entrants.find((x) => x.id === me.id);
+  if (!state && room.phase === "racing" && e && !e.finished && e.progress > 0) {
+    let rest;
+    [committed, rest] = commitWords(room.quote.text, "", room.quote.text.slice(0, e.progress));
+    typed = committed + rest;
+    el.input.value = rest;
   }
   state = room;
   // A hidden tab only needs to keep up, not draw; it catches up on return.
@@ -229,8 +253,17 @@ function placeCaret(spans, at) {
 }
 
 // Narrowing the window moves every character, so the caret goes with it.
+// The chart is drawn at the width it's shown, so it's redrawn at the new one
+// (a phone turned sideways would otherwise shrink its text to a smear) —
+// once the window settles, since each redraw replays the lines drawing on.
+let chartWidth = 0;
+let chartRedraw;
 addEventListener("resize", () => {
   if (state) placeCaret(built.spans, Math.min(typed.length, state.quote.text.length - 1));
+  clearTimeout(chartRedraw);
+  chartRedraw = setTimeout(() => {
+    if (summary && !el.summary.hidden && el.chart.clientWidth !== chartWidth) renderChart(summary, colours(summary.entrants));
+  }, 150);
 });
 
 function render() {
@@ -346,6 +379,10 @@ function render() {
   renderArcade(entrant, racing);
 
   el.summary.hidden = !summary || racing;
+  // Drawn once it's showing, so the chart can measure its width. A page
+  // opened during the results has the summary before its first state (and
+  // before anything can render), so it's drawn on the first render after.
+  if (summary && summary !== drawnSummary && !el.summary.hidden) renderSummary();
   tick();
 }
 
@@ -472,7 +509,8 @@ function tick() {
   const left = secondsLeft();
   const watching = state.watching === 1 ? "just you here" : `${state.watching} here`;
   const n = state.entrants.length;
-  el.phase.textContent = {
+  // the clock keeps running while the line's down, but say that it is
+  el.phase.textContent = ws.readyState !== WebSocket.OPEN ? "Lost the connection. Reconnecting…" : {
     lobby: `Waiting for someone to start a race · ${watching}`,
     countdown: `Starts in ${left}s · ${n} on the line · ${watching}`,
     racing: `Racing · ${left}s left · ${watching}`,
@@ -632,6 +670,10 @@ el.input.addEventListener("keydown", (e) => {
   } else if (e.key === "Tab" && state.phase === "racing" && mine() && !mine().finished) {
     // indentation is typed for you; Tab would only throw you out of the box
     e.preventDefault();
+  } else if (e.key === "Escape") {
+    // ...so Escape is the keyboard's way out of it mid-race (to the tape
+    // toggle, say); a click on the passage or a Tab back picks it up again
+    el.input.blur();
   } else if (
     e.key === "Backspace" &&
     state.phase === "racing" &&
@@ -711,6 +753,18 @@ el.ready.addEventListener("click", () => {
 
 for (const b of el.modes) b.addEventListener("click", () => send({ t: "mode", mode: b.dataset.mode }));
 
+// The modes are a radio group, so the arrow keys move along it and pick as
+// they go, the way a screen reader says they will.
+el.modes[0].parentElement.addEventListener("keydown", (e) => {
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+  const at = el.modes.indexOf(document.activeElement);
+  if (!step || at < 0) return;
+  e.preventDefault();
+  const next = el.modes[(at + step + el.modes.length) % el.modes.length];
+  next.focus();
+  next.click();
+});
+
 el.tapeToggle.addEventListener("click", () => {
   tape = !tape;
   el.tapeToggle.setAttribute("aria-pressed", String(tape));
@@ -724,7 +778,10 @@ el.tapeToggle.addEventListener("click", () => {
 
 el.nameForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  const name = el.name.value.trim();
+  // the same cleaning the server does (main.ts cleanName), so the box shows
+  // the name you're racing under — and a blank one puts the old name back
+  const name = el.name.value.replace(/[\p{C}]/gu, "").replace(/\s+/g, " ").trim().slice(0, 20);
+  el.name.value = name || me.name;
   if (!name) return;
   me.name = name;
   send({ t: "name", name });
@@ -742,19 +799,17 @@ function onBoard({ today, allTime, history }) {
 function onSummary(race) {
   summary = race;
   if (!race.entrants.some((e) => e.id === replayOf)) replayOf = race.entrants[0]?.id;
-  // render unhides the summary, so the chart can measure its width
-  paint(() => {
-    render();
-    renderSummary();
-  });
+  paint();
 }
 
 const byPlace = (a, b) => (a.place ?? 99) - (b.place ?? 99) || b.progress - a.progress;
 const pct = (x) => `${Math.round(x * 100)}%`;
 const visible = (ch) => (ch === " " ? "␣" : ch === "\n" ? "↵" : ch);
 
+let drawnSummary = null;
 function renderSummary() {
   const race = summary;
+  drawnSummary = race;
   const colour = colours(race.entrants);
   el.summaryMeta.textContent = `${race.mode} · ${race.source} · ${race.seconds}s`;
   for (const th of el.arcadeCols) th.hidden = race.mode !== "arcade";
@@ -865,7 +920,8 @@ function svg(tag, attrs = {}) {
 // Each racer's average WPM, second by second, on one shared axis.
 // Drawn at the width it's shown, so its text stays readable on a phone.
 function renderChart(race, colour) {
-  const W = Math.max(300, el.chart.clientWidth || 640);
+  chartWidth = el.chart.clientWidth;
+  const W = Math.max(300, chartWidth || 640);
   const H = 240;
   const m = { l: 36, r: W < 500 ? 70 : 110, t: 12, b: 28 };
   const lines = race.entrants.filter((e) => e.series.length > 0);
