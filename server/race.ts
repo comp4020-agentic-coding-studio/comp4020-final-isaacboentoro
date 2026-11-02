@@ -99,10 +99,12 @@ export class Room {
   add(conn: Conn): void {
     this.send(conn, { t: "board", ...boardFor(conn.player.id) });
     if (this.summary) this.send(conn, { t: "summary", race: this.summary });
-    // the newcomer gets the passage in full; everyone else just the change
-    this.broadcast();
+    // Counted in before anyone's told, so the room sees them arrive (its
+    // "N here" goes up) rather than learning of them on the next change.
+    // The newcomer gets the passage in full; everyone else just the change.
     this.conns.add(conn);
     this.droppedAt.delete(conn.player.id); // back: no longer in grace
+    this.broadcast(conn);
     this.send(conn, { t: "state", room: this.snapshot(true) });
   }
 
@@ -376,12 +378,12 @@ export class Room {
     };
   }
 
-  broadcast(): void {
+  broadcast(except?: Conn): void {
     this.dirty = false;
     const fresh = this.sentQuote !== this.quote;
     this.sentQuote = this.quote;
     const msg = JSON.stringify({ t: "state", room: this.snapshot(fresh) });
-    for (const c of this.conns) if (c.ws.readyState === c.ws.OPEN) c.ws.send(msg);
+    for (const c of this.conns) if (c !== except && c.ws.readyState === c.ws.OPEN) c.ws.send(msg);
   }
 
   private send(conn: Conn, msg: object): void {
