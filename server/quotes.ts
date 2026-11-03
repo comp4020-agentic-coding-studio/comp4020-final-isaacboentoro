@@ -32,10 +32,6 @@ export const quotes: Quote[] = [
     source: "F. Scott Fitzgerald, The Great Gatsby",
   },
   {
-    text: "The sky above the port was the colour of a winter morning, and the gulls went wheeling over the grey water without a sound.",
-    source: "Original",
-  },
-  {
     text: "There was no possibility of taking a walk that day. We had been wandering, indeed, in the leafless shrubbery an hour in the morning.",
     source: "Charlotte Bronte, Jane Eyre",
   },
@@ -50,14 +46,6 @@ export const quotes: Quote[] = [
   {
     text: "As Gregor Samsa awoke one morning from uneasy dreams he found himself transformed in his bed into a gigantic insect.",
     source: "Franz Kafka, The Metamorphosis",
-  },
-  {
-    text: "The last bus out of Civic left at ten past eleven, and everyone who missed it knew exactly whose fault that was.",
-    source: "Original",
-  },
-  {
-    text: "Every morning the bakery on the corner put out a chalkboard, and every morning someone corrected the spelling before noon.",
-    source: "Original",
   },
   {
     text: "Marley was dead: to begin with. There is no doubt whatever about that. The register of his burial was signed by the clergyman.",
