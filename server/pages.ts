@@ -106,6 +106,7 @@ export function roomPage(
       <h1 id="track-h">Racing on ${esc(label)}</h1>
       <button type="button" id="tape-toggle" class="tape-toggle" aria-pressed="false">Tape mode</button>
       <p id="phase" role="status" aria-live="polite">Connecting…</p>
+      <span id="me-live" class="live"></span>
     </div>
     <div class="modes" role="radiogroup" aria-label="Race mode">
       <button type="button" class="mode" role="radio" data-mode="quotes" aria-checked="true">Quotes</button>
@@ -130,7 +131,6 @@ export function roomPage(
     <div class="actions">
       <button id="join" type="button" disabled>Join next race</button>
       <button id="ready" type="button" class="secondary" hidden>Ready</button>
-      <span id="me-live" class="live"></span>
     </div>
     <section id="summary" class="summary" aria-labelledby="summary-h" hidden>
       <h2 id="summary-h">Last race</h2>

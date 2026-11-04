@@ -223,14 +223,23 @@ function passageSpans(text) {
     const track = document.createElement("span");
     track.className = "tape-track";
     track.append(...spans);
-    el.passage.replaceChildren(track);
+    el.passage.replaceChildren(track, caretBar);
   } else {
-    el.passage.replaceChildren(...spans);
+    el.passage.replaceChildren(...spans, caretBar);
     el.passage.scrollTop = 0;
   }
   built = { key, spans };
   return spans;
 }
+
+// Your caret is one thin bar laid over the passage rather than a mark on a
+// letter, so it can glide from letter to letter (style.css) instead of
+// hopping. It holds still while you type and only blinks once you stop.
+const caretBar = document.createElement("span");
+caretBar.className = "caret-bar";
+caretBar.hidden = true;
+let caretAt = "";
+let caretIdle;
 
 // Keeps the character you're on in view. Tape mode pins it to the middle of
 // the line, so the text moves and your eyes don't; otherwise the passage
@@ -238,18 +247,30 @@ function passageSpans(text) {
 function placeCaret(spans, at) {
   const caret = spans[Math.max(0, at)];
   if (!caret) return;
+  let x = caret.offsetLeft;
   if (tape) {
     const centre = caret.offsetLeft + caret.offsetWidth / 2;
     const shift = Math.round(el.passage.clientWidth / 2 - centre);
     caret.parentElement.style.transform = `translateX(${shift}px)`;
-    return;
+    x += shift;
+  } else {
+    const lh = caret.offsetHeight;
+    const top = caret.offsetTop;
+    const box = el.passage;
+    if (top < box.scrollTop || top + 2 * lh > box.scrollTop + box.clientHeight) {
+      box.scrollTop = Math.max(0, top - lh);
+    }
   }
-  const lh = caret.offsetHeight;
-  const top = caret.offsetTop;
-  const box = el.passage;
-  if (top < box.scrollTop || top + 2 * lh > box.scrollTop + box.clientHeight) {
-    box.scrollTop = Math.max(0, top - lh);
-  }
+  // The bar sits inside the passage's scrolling box, so its offsets are the
+  // letter's own and it scrolls along with the text.
+  const pos = `translate(${x}px, ${caret.offsetTop}px)`;
+  if (pos === caretAt) return;
+  caretAt = pos;
+  caretBar.style.transform = pos;
+  caretBar.style.height = `${caret.offsetHeight}px`;
+  caretBar.classList.remove("idle");
+  clearTimeout(caretIdle);
+  caretIdle = setTimeout(() => caretBar.classList.add("idle"), 600);
 }
 
 // Narrowing the window moves every character, so the caret goes with it.
@@ -293,6 +314,9 @@ function render() {
   el.passage.classList.toggle("tape", tape);
   const spans = passageSpans(text);
   const myCaretAt = racing && entrant && !entrant.finished ? typed.length : -1;
+  // Before the start it waits on the first letter, where typing will begin;
+  // once you've finished, or while you're only watching, there's none.
+  caretBar.hidden = !(myCaretAt >= 0 || state.phase === "lobby" || state.phase === "countdown");
   for (let i = 0; i < text.length; i++) {
     const span = spans[i];
     let cls = text[i] === "\n" ? "nl" : "";
@@ -371,11 +395,15 @@ function render() {
             ? "Done! Waiting for the others…"
             : "Race under way. Join the next one when it ends.";
 
-  el.live.textContent = entrant && (racing || results)
-    ? state.mode === "arcade"
-      ? `${(entrant.points ?? 0).toLocaleString()} pts · ${Math.round(entrant.wpm)} wpm`
-      : `${Math.round(entrant.wpm)} wpm · ${accuracyPct()}%`
-    : "";
+  // Your own pace, over the passage while you race: big numbers, small units.
+  // The results have their own, larger read-out (renderSummary).
+  renderLive(
+    entrant && racing
+      ? state.mode === "arcade"
+        ? [[(entrant.points ?? 0).toLocaleString(), "pts"], [Math.round(entrant.wpm), "wpm"]]
+        : [[Math.round(entrant.wpm), "wpm"], [accuracyPct(), "%"]]
+      : [],
+  );
   renderArcade(entrant, racing);
 
   el.summary.hidden = !summary || racing;
@@ -384,6 +412,22 @@ function render() {
   // before anything can render), so it's drawn on the first render after.
   if (summary && summary !== drawnSummary && !el.summary.hidden) renderSummary();
   tick();
+}
+
+// Rebuilt only when a number changes, which is at most a few times a second.
+function renderLive(parts) {
+  const key = parts.flat().join(" ");
+  if (el.live.dataset.key === key) return;
+  el.live.dataset.key = key;
+  el.live.replaceChildren(
+    ...parts.map(([n, unit]) => {
+      const s = document.createElement("span");
+      const b = document.createElement("b");
+      b.textContent = n;
+      s.append(b, unit);
+      return s;
+    }),
+  );
 }
 
 // Each racer keeps the same lane element from render to render, so their
