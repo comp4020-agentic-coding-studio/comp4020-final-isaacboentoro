@@ -15,7 +15,7 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     --bg: #f4f1ea; --panel: #ebe7dd; --text: #2c2b28; --dim: #69665e;
-    --accent: #8a6000; --on-accent: #ffffff; --bad: #b3261e; --line: #d8d3c6;
+    --accent: #664600; --on-accent: #ffffff; --bad: #b3261e; --line: #d8d3c6;
     --p1: #2a78d6; --p2: #c4511f; --p3: #13865d; --p4: #4a3aa7;
     --p5: #c2457a; --p6: #007a00; --p7: #d23a39;
     color-scheme: light;

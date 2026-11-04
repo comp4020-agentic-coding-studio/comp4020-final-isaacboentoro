@@ -1,4 +1,5 @@
-// WCAG 2.2 contrast (SC 1.4.3), and the pairings every theme must clear.
+// WCAG 2.2 contrast (SC 1.4.3), the pairings every theme must clear, and
+// the colours that must stay apart from each other.
 // Shared by the theme generator (scripts/themes.ts), which nudges colours
 // until they pass, and by the checks that hold it to that: the spec reads
 // the served themes.css, and pnpm shoot reads what the browser computes.
@@ -49,6 +50,26 @@ export const PAIRS: Array<[fg: string, bg: string, min: number]> = [
   ...[1, 2, 3, 4, 5, 6, 7].map((i): [string, string, number] => [`p${i}`, "bg", 3]),
 ];
 
+// Colours that each read on the page but have to read as different from
+// each other. PAIRS alone let a theme pass with every letter of the passage
+// the same colour: the untyped letters (dim) nudged to 4.5:1 on the page
+// landed beside the typed ones (text), or were sent across the page to
+// them, in 36 themes, so what you'd typed and what was left looked alike.
+// The same went for your name and pace and the chosen mode (accent) against
+// the labels and the other modes beside them (dim).
+//
+// How far apart is judged from two that are known to work. keyrace's own
+// dark, designed for this, has text 2.05:1 from dim and accent 1.67:1;
+// Monkeytype's palettes as published sit at a median of 3.95:1 and 2.07:1,
+// serika dark (its default) at 3.71:1 and 3.02:1, nord at 2.09:1 and 1.41:1.
+// Typed against untyped is the game, so it's held to 2:1, keyrace dark's
+// own; the accent only has to set one word apart from its neighbours, so
+// 1.4:1, which nord's published colours clear.
+export const SEPARATION: Array<[a: string, b: string, min: number]> = [
+  ["text", "dim", 2],
+  ["accent", "dim", 1.4],
+];
+
 // Every pairing a theme's tokens fail, as readable lines (empty if none).
 export function shortfalls(tokens: Record<string, string | Rgb>): string[] {
   const out: string[] = [];
@@ -59,6 +80,14 @@ export function shortfalls(tokens: Record<string, string | Rgb>): string[] {
     }
     const r = contrast(tokens[fg], tokens[bg]);
     if (r < min) out.push(`--${fg} on --${bg} is ${r.toFixed(2)}:1, under ${min}:1`);
+  }
+  for (const [a, b, min] of SEPARATION) {
+    if (!(a in tokens) || !(b in tokens)) {
+      out.push(`--${a} or --${b} missing`);
+      continue;
+    }
+    const r = contrast(tokens[a], tokens[b]);
+    if (r < min) out.push(`--${a} and --${b} are ${r.toFixed(2)}:1 apart, under ${min}:1`);
   }
   return out;
 }

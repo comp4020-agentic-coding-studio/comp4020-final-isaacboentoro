@@ -432,8 +432,9 @@ it("quotes: every passage is a line from a book, credited to its author", () => 
 // --- system's light or dark. Each uses its palette's published colours, nudged
 // --- only where a pairing fell short of readable contrast."
 // The picker's list is read off the page; the colours from the themes.json
-// theme.js fetches, held to the same pairings the generator nudges them to
-// (scripts/contrast.ts). That a pick is worn, read by axe and remembered per
+// theme.js fetches, held to the same pairings the generator nudges them to,
+// and kept as far apart from each other (scripts/contrast.ts PAIRS and
+// SEPARATION). That a pick is worn, read by axe and remembered per
 // browser is the page's: shoot checks all three in every theme.
 
 it.concurrent("the theme picker offers keyrace's own light and dark and every Monkeytype palette, and following the system", async () => {

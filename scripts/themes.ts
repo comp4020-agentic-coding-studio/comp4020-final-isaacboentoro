@@ -23,10 +23,13 @@
  *
  * Where a colour falls short of its pairing in scripts/contrast.ts, it's
  * nudged: its HSL lightness moved, a step at a time, away from what it sits
- * on until it passes, so hue and saturation stay the theme's own. The page
- * and panel are only moved where the text can't be (see build). Every theme
- * is checked again after, and the build fails rather than write one that
- * doesn't pass.
+ * on until it passes, so hue and saturation stay the theme's own. Where the
+ * typed text and the untyped (dim), or the accent and the dim, then sit too
+ * close (SEPARATION there), the text moves out first and the dim back only
+ * if it must. The page and panel are only moved where the text can't be, or
+ * where no text and dim could both read on them and stand apart (see
+ * build). Every theme is checked again after, and the build fails rather
+ * than write one that doesn't pass.
  *
  * keyrace's own dark and light are read from the :root blocks at the top of
  * public/style.css (the system-following default), checked the same way,
@@ -35,7 +38,7 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { contrast, luminance, parseHex, shortfalls, toHex, type Rgb } from "./contrast.ts";
+import { contrast, luminance, PAIRS, parseHex, SEPARATION, shortfalls, toHex, type Rgb } from "./contrast.ts";
 
 const REPO = "monkeytypegame/monkeytype";
 const FILE = "frontend/src/ts/constants/themes.ts";
@@ -115,10 +118,15 @@ const STEP = 0.005;
 // darker on a light one. Only if that runs out, and `flip` allows, does it
 // try the other side.
 export function nudge(hex: string, on: string[], min: number, flip = true): string | null {
-  const passes = (c: string) => on.every((b) => contrast(c, b) >= min);
+  return shift(hex, (c) => on.every((b) => contrast(c, b) >= min), on[0], flip);
+}
+
+// The same walk for any test: the least lightness change that `passes`,
+// moving away from `from` first.
+function shift(hex: string, passes: (c: string) => boolean, from: string, flip = true): string | null {
   if (passes(hex)) return hex;
   const [h, s, l] = toHsl(parseHex(hex));
-  const up = luminance(parseHex(hex)) >= luminance(parseHex(on[0]));
+  const up = luminance(parseHex(hex)) >= luminance(parseHex(from));
   for (const dir of (up ? [1, -1] : [-1, 1]).slice(0, flip ? 2 : 1)) {
     for (let k = 1; k * STEP <= 1; k++) {
       const next = l + dir * k * STEP;
@@ -131,10 +139,14 @@ export function nudge(hex: string, on: string[], min: number, flip = true): stri
 }
 
 function must(hex: string, on: string[], min: number): string {
-  const c = nudge(hex, on, min);
-  if (!c) throw new Error(`no lightness of ${hex} reaches ${min}:1 against ${on.join(" and ")}`);
-  return c;
+  return nudge(hex, on, min) ?? fail(`no lightness of ${hex} reaches ${min}:1 against ${on.join(" and ")}`);
 }
+
+function fail(why: string): never {
+  throw new Error(why);
+}
+
+const apart = (a: string, b: string): number => SEPARATION.find(([x, y]) => x === a && y === b)![2];
 
 // --- racers ---------------------------------------------------------------
 
@@ -182,19 +194,49 @@ export function build(p: Palette): { theme: Omit<Theme, "id" | "label">; nudged:
   // Flipping cream text to black would make it another theme, so there the
   // surface that falls short moves instead, away from the text, until the
   // text as published reads on it.
+  const published = { bg, panel };
   if (!nudge(raw.text, [bg, panel], 4.5, false)) {
-    for (const [token, from] of [["bg", bg], ["panel", panel]] as const) {
-      const to = note(token, from, must(from, [raw.text], 4.5));
-      if (token === "bg") bg = to;
-      else panel = to;
+    bg = must(bg, [raw.text], 4.5);
+    panel = must(panel, [raw.text], 4.5);
+  }
+  // The typed letters have to stand apart from the untyped ones
+  // (SEPARATION), and both have to read on the page, all on the text's side
+  // of it. Those multiply: text 2:1 from a dim that's 4.5:1 on the page is
+  // 9:1 on the page. Where even white (or black) can't reach that, no text
+  // and dim could, so the surface moves on, away from the text, until it
+  // can, with a little to spare (at exactly 9:1 the dim would have to be
+  // one exact colour, which a stepped search can miss).
+  const light = luminance(parseHex(raw.text)) >= luminance(parseHex(bg));
+  const far = light ? "#ffffff" : "#000000";
+  const reach = PAIRS.find(([fg, on]) => fg === "dim" && on === "bg")![2] * apart("text", "dim") * 1.05;
+  bg = note("bg", published.bg, must(bg, [far], reach));
+  panel = note("panel", published.panel, must(panel, [far], reach));
+  const reads = (min: number) => (c: string) => contrast(c, bg) >= min && contrast(c, panel) >= min;
+  const fix = (token: keyof typeof raw, on: string[], min: number) => must(raw[token], on, min);
+  let text = fix("text", [bg, panel], 4.5);
+  let dim = fix("dim", [bg, panel], 4.5);
+  // Typed too close to untyped: the text moves out, away from the dim, as
+  // it has the most room; where it runs out of room before it's far enough,
+  // it goes all the way and the dim comes back toward the page, no nearer
+  // than its own 4.5:1.
+  if (contrast(text, dim) < apart("text", "dim")) {
+    const ok = (t: string) => (c: string) => reads(4.5)(c) && contrast(c, t) >= apart("text", "dim");
+    const out = shift(text, ok(dim), dim, false);
+    if (out) text = out;
+    else {
+      const [h, s] = toHsl(parseHex(text));
+      text = toHex(fromHsl([h, s, light ? 1 : 0]));
+      dim = shift(dim, ok(text), text, false) ?? fail(`no --dim reads on the page and stands apart from ${text}`);
     }
   }
-  const fix = (token: keyof typeof raw, on: string[], min: number) => note(token, raw[token], must(raw[token], on, min));
-  const text = fix("text", [bg, panel], 4.5);
-  const dim = fix("dim", [bg, panel], 4.5);
-  const accent = fix("accent", [bg, panel], 4.5);
-  const bad = fix("bad", [bg, panel], 3);
-  const caret = fix("caret", [bg], 3);
+  // The accent likewise from the dim, either way, whichever is nearer.
+  const accent = shift(fix("accent", [bg, panel], 4.5), (c) => reads(4.5)(c) && contrast(c, dim) >= apart("accent", "dim"), dim)
+    ?? fail(`no --accent reads on the page and stands apart from --dim ${dim}`);
+  note("text", raw.text, text);
+  note("dim", raw.dim, dim);
+  note("accent", raw.accent, accent);
+  const bad = note("bad", raw.bad, fix("bad", [bg, panel], 3));
+  const caret = note("caret", raw.caret, fix("caret", [bg], 3));
   const onAccent = contrast(text, accent) > contrast(bg, accent) ? text : bg;
   const tokens: Record<string, string> = {
     bg, panel, text, dim, accent, "on-accent": onAccent, bad, caret,

@@ -145,7 +145,9 @@ const SHOWN = ["keyrace-dark", "keyrace-light", "dracula", "nord", "nord-light",
 //
 //  - every pairing scripts/contrast.ts names (text and dim on the page and
 //    panel, the accent, what sits on it, mistakes, the caret and all seven
-//    racers' colours), worked out from the page's own custom properties.
+//    racers' colours), and the colours it keeps apart from each other
+//    (typed text from untyped, the accent from the dim beside it), worked
+//    out from the page's own custom properties.
 //    The lobby shows no mistakes and no other racers, so this is what
 //    covers the colours axe can't see there.
 //  - axe, on the text the lobby does show.
