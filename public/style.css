@@ -202,7 +202,10 @@ body.focus .passage.tape { max-height: none; }
 }
 .passage .nl { opacity: 0.5; }
 @media (max-width: 500px) { .passage { font-size: 1.2rem; } }
-.passage .ok { color: var(--text); }
+/* what you've typed has a thin rule under it and what's left has none, so
+   the two differ by more than their colour (WCAG 2.2 SC 1.4.1): the rule
+   runs along under the typed text up to the caret, like a progress line */
+.passage .ok { color: var(--text); box-shadow: inset 0 -1px 0 var(--dim); }
 /* a wrong letter is the mistake colour, underlined so a wrong space (which
    has nothing to colour) still shows */
 .passage .bad { color: var(--bad); box-shadow: inset 0 -2px 0 var(--bad); }
