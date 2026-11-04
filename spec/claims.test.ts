@@ -5,6 +5,8 @@ import WebSocket from "ws";
 import { ARCADE_MS } from "../server/arcade.ts";
 import { snippets, SPRINT_MS, WORD_COUNT } from "../server/passages.ts";
 import { quotes } from "../server/quotes.ts";
+import { shortfalls } from "../scripts/contrast.ts";
+import { generate, opaque } from "../scripts/themes.ts";
 import { page, racer, visitor, type RoomState } from "./racer.ts";
 
 // server/race.ts opens the database when it's imported, so its timings are
@@ -426,20 +428,62 @@ it("quotes: every passage is a line from a book, credited to its author", () => 
 });
 
 // --- "The picker in the header switches the whole page between keyrace's own
-// --- light and dark, Gruvbox, Adwaita, Catppuccin, Nord, Dracula, Solarized,
-// --- Tokyo Night and Rosé Pine — or, left alone, follows the system's light or dark."
-// That a pick is worn and remembered per browser is the page's: shoot checks both.
+// --- light and dark and Monkeytype's palettes — or, left alone, follows the
+// --- system's light or dark. Each uses its palette's published colours, nudged
+// --- only where a pairing fell short of readable contrast."
+// The picker's list is read off the page; the colours from the themes.json
+// theme.js fetches, held to the same pairings the generator nudges them to
+// (scripts/contrast.ts). That a pick is worn, read by axe and remembered per
+// browser is the page's: shoot checks all three in every theme.
 
-it.concurrent("the theme picker offers every theme the README names, and following the system", async () => {
+it.concurrent("the theme picker offers keyrace's own light and dark and every Monkeytype palette, and following the system", async () => {
   const doc = new JSDOM(await page(await visitor())).window.document;
   const options = [...doc.querySelectorAll("#theme option")].map((o) => ({
     value: (o as HTMLOptionElement).value,
     label: o.textContent!.toLowerCase(),
   }));
   expect(options.find((o) => o.value === "")?.label).toMatch(/system/);
-  for (const name of ["keyrace light", "keyrace dark", "gruvbox", "adwaita", "catppuccin", "nord", "dracula", "solarized", "tokyo night", "rosé pine"]) {
-    expect(options.some((o) => o.label.includes(name)), `no "${name}" theme`).toBe(true);
+  for (const name of ["keyrace light", "keyrace dark"]) {
+    expect(options.some((o) => o.label === name), `no "${name}" theme`).toBe(true);
   }
+  const vendored = JSON.parse(readFileSync("scripts/monkeytype-themes.json", "utf8"));
+  const offered = new Set(options.map((o) => o.value));
+  const missing = Object.keys(vendored.themes).map((n) => n.replace(/_/g, "-")).filter((id) => !offered.has(id));
+  expect(missing).toEqual([]);
+  expect(options.length).toBe(Object.keys(vendored.themes).length + 3); // + keyrace's two, + system
+});
+
+it.concurrent("every theme the picker offers clears contrast in every pairing", async () => {
+  const served: Array<{ id: string; tokens: Record<string, string> }> = await (await fetch(new URL("/static/themes.json", baseUrl))).json();
+  const doc = new JSDOM(await page(await visitor())).window.document;
+  const offered = [...doc.querySelectorAll("#theme option")].map((o) => (o as HTMLOptionElement).value).filter(Boolean);
+  const byId = new Map(served.map((t) => [t.id, t]));
+  expect(offered.filter((id) => !byId.has(id)), "offered, but no colours served").toEqual([]);
+  expect(offered.flatMap((id) => shortfalls(byId.get(id)!.tokens).map((f) => `${id}: ${f}`))).toEqual([]);
+});
+
+it("each theme is its palette's published colours, changed only where contrast needed it", () => {
+  // what's committed is what the generator makes from the vendored palettes
+  const { themes, palettes, nudged } = generate();
+  const committed = JSON.parse(readFileSync("public/themes.json", "utf8"));
+  expect(committed).toEqual(themes);
+  // and every token from the palette is the palette's own unless nudged
+  const from: Record<string, keyof (typeof palettes)[string]> = { bg: "bg", panel: "subAlt", text: "text", dim: "sub", accent: "main", bad: "error", caret: "caret" };
+  const changed: string[] = [];
+  for (const t of themes) {
+    const p = palettes[t.id];
+    if (!p) continue;
+    for (const [token, key] of Object.entries(from)) {
+      const own = opaque(p[key], t.tokens.bg);
+      const ok = own === t.tokens[token] || nudged[t.id]?.some((n) => n.token === token && n.to === t.tokens[token]);
+      if (!ok) changed.push(`${t.id} --${token}: ${p[key]} became ${t.tokens[token]} without a nudge`);
+      // and a nudge was needed: the published colour fell short
+      if (own !== t.tokens[token] && token !== "bg" && token !== "panel") {
+        expect(shortfalls({ ...t.tokens, [token]: own }).length, `${t.id} --${token} nudged though ${own} passed`).toBeGreaterThan(0);
+      }
+    }
+  }
+  expect(changed).toEqual([]);
 });
 
 // --- "How each multi-user decision was weighed against this is in

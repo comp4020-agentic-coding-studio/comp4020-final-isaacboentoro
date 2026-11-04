@@ -4,15 +4,17 @@
  * Drives real Chromium against the running app at both marking viewports,
  * 1920x1080 and 390x844, and fails loudly on anything a person would notice
  * that `pnpm check` can't: a console error, a serious axe violation in any
- * theme, a page that scrolls sideways, a race that can't be played from the
- * keyboard alone, a countdown that jumps around, a racer who can't see the
- * other one, an arcade meter that doesn't climb or reset, and a page or
- * socket heavier than its budget.
+ * theme, a theme colour that falls short of contrast, a page that scrolls
+ * sideways, a race that can't be played from the keyboard alone, a
+ * countdown that jumps around, a racer who can't see the other one, an
+ * arcade meter that doesn't climb or reset, and a page or socket heavier
+ * than its budget.
  *
  *   pnpm shoot                     # against APP_URL (default localhost:8080)
  *   pnpm shoot https://….fly.dev/  # against the deployed site
  *
- * Screenshots of every state, in every theme it checks, land in .screens/.
+ * Screenshots of every state, and of a sample of the themes, land in
+ * .screens/.
  */
 
 import { mkdir, rm } from "node:fs/promises";
@@ -20,6 +22,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import { shortfalls } from "./contrast.ts";
 
 const OUT = resolve(".screens");
 const CHROME = ["/usr/bin/chromium", "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable"];
@@ -118,6 +121,7 @@ async function weigh(): Promise<void> {
     return res;
   };
   await get("/");
+  // themes.json isn't part of it: theme.js fetches it only when one is picked
   for (const p of ["/static/style.css", "/static/app.js", "/static/theme.js"]) {
     const res = await get(p);
     const etag = res.headers.get("etag");
@@ -129,6 +133,64 @@ async function weigh(): Promise<void> {
   }
   report.push(`first load: ${(total / 1000).toFixed(1)}kB over the wire (${parts.join(", ")}), budget ${FIRST_LOAD_BUDGET / 1000}kB`);
   if (total > FIRST_LOAD_BUDGET) problems.push(`first load is ${total} bytes, over the ${FIRST_LOAD_BUDGET} budget`);
+}
+
+// Themes worth a screenshot: keyrace's own, the ones the README used to
+// name, and those the generator had to nudge hardest (a page or panel moved,
+// or a colour taken across to the other side of the page).
+const SHOWN = ["keyrace-dark", "keyrace-light", "dracula", "nord", "nord-light", "serika-dark", "deku", "evil-eye", "leather", "pastel", "mexican"];
+
+// Every theme the picker offers, picked the way a person would, on the
+// lobby. Two checks, each on what the browser actually computed:
+//
+//  - every pairing scripts/contrast.ts names (text and dim on the page and
+//    panel, the accent, what sits on it, mistakes, the caret and all seven
+//    racers' colours), worked out from the page's own custom properties.
+//    The lobby shows no mistakes and no other racers, so this is what
+//    covers the colours axe can't see there.
+//  - axe, on the text the lobby does show.
+//
+// Motion is reduced while it runs: the theme then changes without a view
+// transition, so the page is settled on the next frame rather than after a
+// crossfade, and ~190 themes take seconds, not minutes. The crossfade itself
+// is still picked through once at the end. Anything still mid-transition
+// is jumped to its end before it's read.
+async function sweep(page: Page, vp: (typeof VIEWPORTS)[number], note: (m: string) => void): Promise<string[]> {
+  const themes = await page.$$eval("#theme option", (os) => os.map((o) => (o as HTMLOptionElement).value).filter(Boolean));
+  if (themes.length < 2) note(`only ${themes.length} theme(s) offered`);
+  for (const v of await axe(page)) note(`axe [system] ${v.impact}: ${v.id} at ${v.where} — ${v.help}`);
+  await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+  const short: string[] = [];
+  for (const id of themes) {
+    await page.select("#theme", id);
+    await page.waitForFunction((id) => document.documentElement.dataset.theme === id, { timeout: 5000 }, id)
+      .catch(() => note(`picked theme ${id}, page never wore it`));
+    // a control's own colour transition (the mode strip, the tape toggle)
+    // still runs under reduced motion; jump it to its end, or axe reads the
+    // last theme's colour on this one's background
+    await page.evaluate(() => {
+      for (const a of document.getAnimations()) if (a instanceof CSSTransition) a.finish();
+    });
+    const tokens = await page.evaluate(() => {
+      const css = getComputedStyle(document.documentElement);
+      const names = ["bg", "panel", "text", "dim", "accent", "on-accent", "bad", "caret", "p1", "p2", "p3", "p4", "p5", "p6", "p7"];
+      // a theme without its own caret uses the accent, as style.css does
+      return Object.fromEntries(names.map((n) => [n, css.getPropertyValue(`--${n}`).trim() || (n === "caret" ? css.getPropertyValue("--accent").trim() : "")]).filter(([, v]) => v));
+    });
+    for (const f of shortfalls(tokens)) short.push(`[${id}] ${f}`);
+    for (const v of await axe(page)) note(`axe [${id}] ${v.impact}: ${v.id} at ${v.where} — ${v.why}`);
+    if (vp.name === "desktop" && SHOWN.includes(id)) await shot(page, `theme-${id}`);
+  }
+  for (const s of short) note(`contrast ${s}`);
+  await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+  // and once more with motion on, through the view transition
+  await page.select("#theme", themes[0]);
+  await wait(450);
+  await page.select("#theme", themes.at(-1)!);
+  await wait(450);
+  const worn = await page.evaluate(() => document.documentElement.dataset.theme);
+  if (worn !== themes.at(-1)) note(`picked theme ${themes.at(-1)} with motion on, page wears ${worn}`);
+  return themes;
 }
 
 async function viewport(browser: Browser, vp: (typeof VIEWPORTS)[number]): Promise<void> {
@@ -150,18 +212,8 @@ async function viewport(browser: Browser, vp: (typeof VIEWPORTS)[number]): Promi
     if (data.startsWith('{"t":"state"')) frames.push(data.length);
   });
 
-  // The lobby, in every theme the picker offers: axe reads the real page.
-  const themes = await pa.$$eval("#theme option", (os) => os.map((o) => (o as HTMLOptionElement).value).filter(Boolean));
-  if (themes.length < 2) note(`only ${themes.length} theme(s) offered`);
-  for (const v of await axe(pa)) note(`axe [system] ${v.impact}: ${v.id} at ${v.where} — ${v.help}`);
-  for (const id of themes) {
-    await pa.select("#theme", id);
-    await wait(450); // a view transition crossfades the change; judge it settled
-    const worn = await pa.evaluate(() => document.documentElement.dataset.theme);
-    if (worn !== id) note(`picked theme ${id}, page wears ${worn}`);
-    for (const v of await axe(pa)) note(`axe [${id}] ${v.impact}: ${v.id} at ${v.where} — ${v.help}`);
-    if (vp.name === "desktop") await shot(pa, `theme-${id}`);
-  }
+  // The lobby, in every theme the picker offers.
+  const themes = await sweep(pa, vp, note);
   await pa.reload({ waitUntil: "networkidle0" });
   if ((await pa.evaluate(() => document.documentElement.dataset.theme)) !== themes.at(-1)) {
     note("the chosen theme didn't survive a reload");
@@ -252,7 +304,7 @@ async function viewport(browser: Browser, vp: (typeof VIEWPORTS)[number]): Promi
   // racing frames only: the joins and the passage itself are once-off
   const racing = frames.slice(-20);
   const avg = racing.reduce((s, n) => s + n, 0) / Math.max(1, racing.length);
-  report.push(`${vp.name} ${vp.width}x${vp.height}: ${themes.length} themes scanned, state ~${Math.round(avg)}B/msg mid-race (budget ${STATE_MSG_BUDGET}B), countdown ${ticks.join("→")}`);
+  report.push(`${vp.name} ${vp.width}x${vp.height}: ${themes.length} themes scanned (contrast and axe), state ~${Math.round(avg)}B/msg mid-race (budget ${STATE_MSG_BUDGET}B), countdown ${ticks.join("→")}`);
   if (avg > STATE_MSG_BUDGET) note(`state messages average ${Math.round(avg)}B, over the ${STATE_MSG_BUDGET}B budget`);
 
   await a.ctx.close();
