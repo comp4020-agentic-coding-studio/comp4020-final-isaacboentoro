@@ -131,10 +131,6 @@
      coding font; nothing is downloaded, so nothing swaps in mid-race and
      moves the caret off its letter. */
   --font: "Roboto Mono", ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, "DejaVu Sans Mono", monospace;
-  /* depth without blur: a solid offset block in the line colour, which
-     every theme already defines, so it reads in light and dark alike */
-  --lift: 3px 3px 0 var(--line);
-  --lift-hi: 5px 5px 0 var(--line);
   --snap: cubic-bezier(0.2, 0.9, 0.1, 1);
 }
 body {
@@ -597,14 +593,39 @@ button.beckon { animation: beckon-btn 1.6s ease-in-out infinite; }
 /* in-row text buttons never take the hover fill */
 .modes .mode:hover:not(:disabled), .who-tab:hover, .tape-toggle:hover { background: transparent; }
 
-.summary { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+/* --- the results: your numbers big, then the chart, the table, the replay -- */
+
+.summary {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 3rem;
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--line);
+}
+.summary > * { grid-column: 1 / -1; }
 .summary[hidden] { display: none; }
-.chart { margin: 0 0 1.5rem; position: relative; }
-.chart figcaption { color: var(--dim); font-size: 0.85rem; margin-bottom: 0.5rem; }
+.summary > .stats { grid-column: 1; align-self: start; }
+.summary > .chart { grid-column: 2; }
+@media (max-width: 640px) {
+  .summary { grid-template-columns: minmax(0, 1fr); }
+  .summary > .stats, .summary > .chart { grid-column: 1; }
+}
+.stats { display: flex; flex-direction: column; gap: 1rem; margin: 0 0 1.5rem; }
+.stats[hidden] { display: none; }
+.stats div { display: flex; flex-direction: column; }
+.stats dt { font-size: 1rem; color: var(--dim); }
+.stats dd { margin: 0; font-size: 3.5rem; line-height: 1; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stats .small dd { font-size: 1.75rem; color: var(--text); }
+@media (max-width: 640px) {
+  .stats { flex-direction: row; flex-wrap: wrap; gap: 1rem 2rem; }
+}
+.chart { margin: 0 0 2rem; position: relative; }
+.chart figcaption { color: var(--dim); font-size: 0.75rem; margin-bottom: 0.5rem; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
 .chart .grid { stroke: var(--line); stroke-width: 1; }
-.chart .tick { fill: var(--dim); font: 11px var(--mono); }
-.chart .label { fill: var(--text); font: 12px var(--mono); }
+.chart .tick { fill: var(--dim); font: 11px var(--font); }
+.chart .label { fill: var(--text); font: 12px var(--font); }
 .chart .series { fill: none; stroke-width: 2; stroke-linejoin: miter; stroke-linecap: square; }
 .chart .miss { stroke-width: 2; stroke-linecap: square; }
 .chart .end { stroke: var(--bg); stroke-width: 2; }
@@ -614,18 +635,18 @@ button.beckon { animation: beckon-btn 1.6s ease-in-out infinite; }
   top: 2rem;
   padding: 0.4rem 0.6rem;
   background: var(--panel);
-  border: 1px solid var(--line);
-  font: 0.8rem var(--mono);
+  font: 0.8rem var(--font);
   pointer-events: none;
   white-space: nowrap;
 }
 .chart .tip[hidden] { display: none; }
-.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0; margin: 0.5rem 0 0; font: 0.85rem var(--mono); color: var(--dim); }
-.swatch { display: inline-block; width: 0.7em; height: 0.7em; margin-right: 0.4em; vertical-align: baseline; }
+.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0; margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--dim); }
+.swatch { display: inline-block; width: 0.7em; height: 0.7em; margin-right: 0.5em; vertical-align: baseline; }
 
-.results { width: 100%; border-collapse: collapse; font: 0.9rem var(--mono); margin-bottom: 1.5rem; }
-.results th, .results td { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--line); }
-.results thead th { color: var(--dim); font-weight: 600; font-size: 0.8rem; }
+.results { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 2rem; }
+.results th, .results td { text-align: left; padding: 0.4rem 0.5rem; }
+.results tbody tr:nth-child(odd) { background: var(--panel); }
+.results thead th { color: var(--dim); font-weight: 400; font-size: 0.75rem; }
 .results td:nth-child(n+3), .results thead th:nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
 .results tbody th { font-weight: 400; }
 .results .me th { color: var(--accent); }
@@ -637,17 +658,18 @@ button.beckon { animation: beckon-btn 1.6s ease-in-out infinite; }
 /* leaderboard rows slide in when the board changes */
 .board li, .history li { animation: row-in 300ms var(--snap) both; animation-delay: calc(var(--i, 0) * 30ms); }
 
-.who-tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.75rem; }
+.who-tabs { display: flex; flex-wrap: wrap; gap: 0 1.25rem; margin-bottom: 0.75rem; }
 .who-tab {
-  font: 600 0.85rem var(--mono);
-  padding: 0.35rem 0.8rem;
+  font: 0.85rem var(--font);
+  padding: 0.3rem 0;
   background: transparent;
   color: var(--dim);
-  border: 1px solid var(--line);
-  border-bottom: 3px solid var(--c);
-  transition: color 120ms, background-color 160ms var(--snap);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  transition: color 120ms;
 }
-.who-tab[aria-selected="true"] { color: var(--text); background: var(--panel); }
+.who-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--c); }
+.who-tab:hover { color: var(--text); }
 .replay { font-size: 1.15rem; line-height: 2.2; cursor: default; }
 .replay .untyped { opacity: 0.45; }
 .replay .missed { position: relative; color: var(--bad); background: color-mix(in srgb, var(--bad) 18%, transparent); }
@@ -662,44 +684,48 @@ button.beckon { animation: beckon-btn 1.6s ease-in-out infinite; }
   white-space: pre;
 }
 
-.side { display: grid; gap: 1.5rem; align-content: start; }
-.side section { background: var(--panel); padding: 1rem; border: 1px solid var(--line); box-shadow: var(--lift); }
+/* --- the sidebar: quiet panels, out of the way of the passage ------------- */
+
+.side { display: grid; gap: 1rem; align-content: start; font-size: 0.85rem; }
+.side section { background: var(--panel); padding: 1rem 1.1rem; }
 .side form { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; }
-.side form label { grid-column: 1 / -1; font-size: 0.85rem; color: var(--dim); }
+.side form label { grid-column: 1 / -1; font-size: 0.8rem; color: var(--dim); }
 .side input {
   min-width: 0;
-  font: 1rem var(--mono);
+  font: 0.9rem var(--font);
   padding: 0.45rem 0.6rem;
   background: var(--bg);
   color: var(--text);
-  border: 1px solid var(--line);
+  border: 0;
 }
-.side button { padding: 0.45rem 0.8rem; }
+.side input::placeholder { color: var(--dim); opacity: 1; }
+.side button { padding: 0.45rem 0.8rem; background: var(--bg); color: var(--text); }
 .side #history { margin-top: 1rem; }
 
-.board, .history { margin: 0; padding-left: 3.5ch; font-family: var(--mono); font-size: 0.9rem; }
+.board, .history { margin: 0; padding-left: 3ch; font-size: 0.8rem; }
 .board li::marker { color: var(--dim); }
-.history { list-style: none; padding: 0; }
+.history { list-style: none; padding: 0; color: var(--dim); }
 .board li, .history li { padding: 0.15rem 0; }
 .board li > span, .history li > span { display: inline-flex; }
 .board li, .history li { display: list-item; }
 .board .num, .history .num { float: right; color: var(--dim); }
 .board .me .who { color: var(--accent); }
-.empty { color: var(--dim); margin: 0; font-size: 0.9rem; }
+.empty { color: var(--dim); margin: 0; font-size: 0.8rem; }
 
-.readme { max-width: 70ch; margin: 0 auto; padding: 0 1rem 3rem; }
-.readme h1 { font-size: 2rem; color: var(--text); margin: 1rem 0; }
+.readme { max-width: 80ch; margin: 0 auto; padding: 0 1rem 3rem; font-size: 0.95rem; }
+.readme h1 { font-size: 1.75rem; color: var(--text); margin: 1.5rem 0 1rem; font-weight: 700; }
+.readme h2 { font-size: 1.1rem; color: var(--text); margin: 2rem 0 0.75rem; }
 .readme img { max-width: 100%; }
-.readme .play { margin: 1rem 0 0; color: var(--dim); font-size: 0.9rem; }
+.readme pre { background: var(--panel); padding: 0.75rem 1rem; overflow-x: auto; }
+.readme .play { margin: 1rem 0 0; color: var(--dim); font-size: 0.85rem; }
 .readme .cta {
   display: inline-block;
   margin-right: 0.5rem;
-  font: 700 1rem var(--mono);
-  padding: 0.55rem 1rem;
+  font: 700 0.95rem var(--font);
+  padding: 0.55rem 1.1rem;
   background: var(--accent);
   color: var(--on-accent);
   text-decoration: none;
-  box-shadow: var(--lift);
 }
 
 .visually-hidden {

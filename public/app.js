@@ -25,6 +25,7 @@ const el = {
   allTime: $("all-time"),
   summary: $("summary"),
   summaryMeta: $("summary-meta"),
+  stats: $("stats"),
   chart: $("chart"),
   legend: $("legend"),
   results: $("results"),
@@ -857,6 +858,32 @@ function renderSummary() {
   const colour = colours(race.entrants);
   el.summaryMeta.textContent = `${race.mode} · ${race.source} · ${race.seconds}s`;
   for (const th of el.arcadeCols) th.hidden = race.mode !== "arcade";
+
+  // your own result, read at a glance: the headline numbers big, the rest
+  // smaller beneath; nothing for a race you only watched
+  const you = race.entrants.find((e) => e.id === me.id);
+  el.stats.hidden = !you;
+  if (you) {
+    const facts = [
+      ...(race.mode === "arcade" ? [["pts", (you.points ?? 0).toLocaleString()]] : []),
+      ["wpm", Math.round(you.wpm)],
+      ["acc", pct(you.accuracy)],
+      ["place", you.place ? `${ordinal(you.place)}/${race.entrants.length}` : "DNF", "small"],
+      ["time", `${race.seconds}s`, "small"],
+    ];
+    el.stats.replaceChildren(
+      ...facts.map(([label, value, size]) => {
+        const div = document.createElement("div");
+        if (size) div.className = size;
+        const dt = document.createElement("dt");
+        dt.textContent = label;
+        const dd = document.createElement("dd");
+        dd.textContent = value;
+        div.append(dt, dd);
+        return div;
+      }),
+    );
+  }
 
   // results table
   el.results.replaceChildren(

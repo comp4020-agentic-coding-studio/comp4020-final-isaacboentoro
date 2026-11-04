@@ -135,6 +135,7 @@ export function roomPage(
     <section id="summary" class="summary" aria-labelledby="summary-h" hidden>
       <h2 id="summary-h">Last race</h2>
       <p id="summary-meta" class="source"></p>
+      <dl id="stats" class="stats" hidden></dl>
       <figure class="chart">
         <figcaption>Average WPM over the race. Crosses mark mistakes.</figcaption>
         <div id="chart"></div>
