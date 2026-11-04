@@ -1,6 +1,10 @@
 :root {
   --mono: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
-  /* --p1…--p7 are other racers, in join order; yours is --accent.
+  /* keyrace's own dark and, below, light: what the page wears when the
+     header's theme picker is left to follow the system. Every other theme
+     is generated (scripts/themes.ts, which reads these two as well) and
+     laid over these as inline custom properties (public/theme.js).
+     --p1…--p7 are other racers, in join order; yours is --accent.
      --on-accent is text laid on the accent (selected buttons). */
   --bg: #1d1f21; --panel: #26292c; --text: #d1d0c5; --dim: #8d9194;
   --accent: #e2b714; --on-accent: #1d1f21; --bad: #ca4754; --line: #34383c;
@@ -16,108 +20,6 @@
     --p5: #c2457a; --p6: #007a00; --p7: #d23a39;
     color-scheme: light;
   }
-}
-
-/* Themes (the picker in the header, app.js). Each is its palette's own
-   published colours, nudged only where a pairing fell short of contrast:
-   4.5:1 for text, 3:1 for the accent, mistakes and every racer's colour. */
-:root[data-theme="keyrace-dark"] {
-  --bg: #1d1f21; --panel: #26292c; --text: #d1d0c5; --dim: #8d9194;
-  --accent: #e2b714; --on-accent: #1d1f21; --bad: #ca4754; --line: #34383c;
-  --p1: #3987e5; --p2: #d95926; --p3: #199e70; --p4: #9085e9;
-  --p5: #d55181; --p6: #3fa33f; --p7: #e66767;
-  color-scheme: dark;
-}
-:root[data-theme="keyrace-light"] {
-  --bg: #f4f1ea; --panel: #ebe7dd; --text: #2c2b28; --dim: #69665e;
-  --accent: #8a6000; --on-accent: #ffffff; --bad: #b3261e; --line: #d8d3c6;
-  --p1: #2a78d6; --p2: #c4511f; --p3: #13865d; --p4: #4a3aa7;
-  --p5: #c2457a; --p6: #007a00; --p7: #d23a39;
-  color-scheme: light;
-}
-:root[data-theme="gruvbox-dark"] {
-  --bg: #282828; --panel: #32302f; --text: #ebdbb2; --dim: #a89984;
-  --accent: #fabd2f; --on-accent: #282828; --bad: #fb4934; --line: #504945;
-  --p1: #83a598; --p2: #fe8019; --p3: #b8bb26; --p4: #d3869b;
-  --p5: #8ec07c; --p6: #fb4934; --p7: #d79921;
-  color-scheme: dark;
-}
-:root[data-theme="gruvbox-light"] {
-  --bg: #fbf1c7; --panel: #f2e5bc; --text: #3c3836; --dim: #706358;
-  --accent: #af3a03; --on-accent: #fbf1c7; --bad: #9d0006; --line: #d5c4a1;
-  --p1: #076678; --p2: #b57614; --p3: #79740e; --p4: #8f3f71;
-  --p5: #427b58; --p6: #9d0006; --p7: #d65d0e;
-  color-scheme: light;
-}
-:root[data-theme="adwaita-dark"] {
-  --bg: #222226; --panel: #2e2e32; --text: #ffffff; --dim: #9a9a9e;
-  --accent: #78aeed; --on-accent: #222226; --bad: #ff7b63; --line: #3a3a3f;
-  --p1: #57e389; --p2: #f8e45c; --p3: #ffa348; --p4: #dc8add;
-  --p5: #cdab8f; --p6: #99c1f1; --p7: #f66151;
-  color-scheme: dark;
-}
-:root[data-theme="adwaita-light"] {
-  --bg: #fafafb; --panel: #ebebed; --text: #323233; --dim: #68686d;
-  --accent: #0461be; --on-accent: #ffffff; --bad: #c30000; --line: #dcdce0;
-  --p1: #26a269; --p2: #c64600; --p3: #9141ac; --p4: #986a44;
-  --p5: #1a5fb4; --p6: #e01b24; --p7: #9c6e03;
-  color-scheme: light;
-}
-:root[data-theme="catppuccin-mocha"] {
-  --bg: #1e1e2e; --panel: #181825; --text: #cdd6f4; --dim: #9399b2;
-  --accent: #cba6f7; --on-accent: #1e1e2e; --bad: #f38ba8; --line: #313244;
-  --p1: #89b4fa; --p2: #fab387; --p3: #a6e3a1; --p4: #f5c2e7;
-  --p5: #94e2d5; --p6: #f9e2af; --p7: #b4befe;
-  color-scheme: dark;
-}
-:root[data-theme="catppuccin-latte"] {
-  --bg: #eff1f5; --panel: #e6e9ef; --text: #4c4f69; --dim: #63667c;
-  --accent: #8839ef; --on-accent: #eff1f5; --bad: #d20f39; --line: #ccd0da;
-  --p1: #1e66f5; --p2: #ec5701; --p3: #3e9a29; --p4: #e34aba;
-  --p5: #179299; --p6: #bd7819; --p7: #657cfd;
-  color-scheme: light;
-}
-:root[data-theme="nord"] {
-  --bg: #2e3440; --panel: #3b4252; --text: #eceff4; --dim: #a9b0c3;
-  --accent: #88c0d0; --on-accent: #2e3440; --bad: #bf616a; --line: #434c5e;
-  --p1: #81a1c1; --p2: #d08770; --p3: #a3be8c; --p4: #b48ead;
-  --p5: #ebcb8b; --p6: #8fbcbb; --p7: #5e81ac;
-  color-scheme: dark;
-}
-:root[data-theme="dracula"] {
-  --bg: #282a36; --panel: #21222c; --text: #f8f8f2; --dim: #9ea8c7;
-  --accent: #bd93f9; --on-accent: #282a36; --bad: #ff5555; --line: #44475a;
-  --p1: #8be9fd; --p2: #ffb86c; --p3: #50fa7b; --p4: #ff79c6;
-  --p5: #f1fa8c; --p6: #6272a4; --p7: #ff5555;
-  color-scheme: dark;
-}
-:root[data-theme="solarized-dark"] {
-  --bg: #002b36; --panel: #073642; --text: #eee8d5; --dim: #8c9d9f;
-  --accent: #b58900; --on-accent: #002b36; --bad: #dc322f; --line: #0d4452;
-  --p1: #268bd2; --p2: #cb4b16; --p3: #859900; --p4: #d33682;
-  --p5: #2aa198; --p6: #6c71c4; --p7: #dc322f;
-  color-scheme: dark;
-}
-:root[data-theme="solarized-light"] {
-  --bg: #fdf6e3; --panel: #eee8d5; --text: #073642; --dim: #546a72;
-  --accent: #1f74b0; --on-accent: #fdf6e3; --bad: #dc322f; --line: #ddd6c1;
-  --p1: #cb4b16; --p2: #819400; --p3: #d33682; --p4: #289b92;
-  --p5: #6c71c4; --p6: #b08500; --p7: #dc322f;
-  color-scheme: light;
-}
-:root[data-theme="tokyo-night"] {
-  --bg: #1a1b26; --panel: #24283b; --text: #c0caf5; --dim: #8e8eb0;
-  --accent: #7aa2f7; --on-accent: #1a1b26; --bad: #f7768e; --line: #292e42;
-  --p1: #bb9af7; --p2: #9ece6a; --p3: #e0af68; --p4: #7dcfff;
-  --p5: #ff9e64; --p6: #73daca; --p7: #f7768e;
-  color-scheme: dark;
-}
-:root[data-theme="rose-pine"] {
-  --bg: #191724; --panel: #1f1d2e; --text: #e0def4; --dim: #908caa;
-  --accent: #f6c177; --on-accent: #191724; --bad: #eb6f92; --line: #26233a;
-  --p1: #9ccfd8; --p2: #c4a7e7; --p3: #ebbcba; --p4: #3e8fb0;
-  --p5: #eb6f92; --p6: #f6c177; --p7: #908caa;
-  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }

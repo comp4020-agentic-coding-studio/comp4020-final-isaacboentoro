@@ -8,24 +8,22 @@ export const esc = (s: string): string =>
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
 
-// The themes the header's picker offers; each one's colours are in
-// style.css under :root[data-theme="…"].
-const THEMES: Array<[id: string, label: string]> = [
-  ["keyrace-dark", "keyrace dark"],
-  ["keyrace-light", "keyrace light"],
-  ["gruvbox-dark", "Gruvbox dark"],
-  ["gruvbox-light", "Gruvbox light"],
-  ["adwaita-dark", "Adwaita dark"],
-  ["adwaita-light", "Adwaita light"],
-  ["catppuccin-mocha", "Catppuccin Mocha"],
-  ["catppuccin-latte", "Catppuccin Latte"],
-  ["nord", "Nord"],
-  ["dracula", "Dracula"],
-  ["solarized-dark", "Solarized dark"],
-  ["solarized-light", "Solarized light"],
-  ["tokyo-night", "Tokyo Night"],
-  ["rose-pine", "Rosé Pine"],
-];
+// The themes the header's picker offers: keyrace's own pair, then
+// Monkeytype's palettes, generated with their contrast fixed by
+// scripts/themes.ts. Only the names go into the page; theme.js fetches the
+// colours when one is picked.
+type ThemeEntry = { id: string; label: string; scheme: "dark" | "light" };
+const THEMES: ThemeEntry[] = JSON.parse(readFileSync("public/themes.json", "utf8"));
+
+// keyrace's own first, then the rest under dark and light, by name.
+const themeOptions = (() => {
+  const opt = (t: ThemeEntry) => `<option value="${esc(t.id)}">${esc(t.label)}</option>`;
+  const own = THEMES.filter((t) => t.id.startsWith("keyrace-"));
+  const rest = THEMES.filter((t) => !own.includes(t)).sort((a, b) => a.label.localeCompare(b.label));
+  const group = (scheme: string) =>
+    `<optgroup label="${scheme}">${rest.filter((t) => t.scheme === scheme).map(opt).join("")}</optgroup>`;
+  return `<optgroup label="keyrace">${own.map(opt).join("")}</optgroup>${group("dark")}${group("light")}`;
+})();
 
 function layout(title: string, body: string, extraHead = ""): string {
   return `<!doctype html>
@@ -38,10 +36,16 @@ function layout(title: string, body: string, extraHead = ""): string {
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/static/style.css">
 <script>
-  // before the first paint, so a chosen theme never flashes the default
+  // before the first paint, so a chosen theme never flashes the default:
+  // theme.js keeps the chosen theme's colours here, so none are fetched
   try {
-    const t = localStorage.getItem("keyrace-theme");
-    if (t) document.documentElement.dataset.theme = t;
+    const t = JSON.parse(localStorage.getItem("keyrace-theme"));
+    const root = document.documentElement;
+    if (t && t.id) {
+      root.dataset.theme = t.id;
+      for (const k in t.tokens) root.style.setProperty("--" + k, t.tokens[k]);
+      root.style.colorScheme = t.scheme;
+    }
   } catch {}
 </script>
 ${extraHead}
@@ -54,7 +58,7 @@ ${extraHead}
       <span class="visually-hidden">Theme</span>
       <select id="theme">
         <option value="">Theme: match system</option>
-        ${THEMES.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join("")}
+        ${themeOptions}
       </select>
     </label>
     <a href="/readme/">about</a>
