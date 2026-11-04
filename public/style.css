@@ -146,34 +146,46 @@ body {
 a { color: var(--accent); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
+/* --- the top bar: the name, and two quiet text links ---------------------- */
+
 .top {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  max-width: 1100px;
+  align-items: center;
+  gap: 1rem;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 1.5rem 1rem 1rem;
 }
 .brand {
-  font: 700 1.5rem var(--mono);
+  font: 700 1.75rem/1 var(--font);
+  letter-spacing: -0.04em;
   color: var(--text);
   text-decoration: none;
 }
 .brand::first-letter { color: var(--accent); }
-.top nav { display: flex; align-items: center; gap: 1rem; }
-.top nav a { color: var(--dim); }
+.top nav { display: flex; align-items: center; gap: 1.25rem; font-size: 0.85rem; }
+.top nav a { color: var(--dim); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
 .theme-pick select {
   appearance: none;
-  font: 600 0.8rem var(--mono);
-  padding: 0.3rem 1.8rem 0.3rem 0.7rem;
+  font: 0.85rem var(--font);
+  padding: 0.2rem 1.2rem 0.2rem 0;
   color: var(--dim);
-  background: var(--panel)
+  background: transparent
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5'/%3E%3C/svg%3E")
-    no-repeat right 0.65rem center;
-  border: 1px solid var(--line);
+    no-repeat right center;
+  border: 0;
   cursor: pointer;
+  max-width: 100%;
 }
 .theme-pick select:hover { color: var(--text); }
+.theme-pick option { background: var(--bg); color: var(--text); }
+@media (max-width: 500px) {
+  .brand { font-size: 1.4rem; }
+  .top nav { gap: 1rem; font-size: 0.8rem; }
+  .theme-pick select { font-size: 0.8rem; }
+}
 
 .race {
   display: grid;
@@ -458,27 +470,30 @@ body.focus .passage.tape { max-height: none; }
 @keyframes jolt { 20% { transform: translateX(-5px); } 45% { transform: translateX(4px); } 70% { transform: translateX(-2px); } }
 .typing textarea:disabled { opacity: 0.6; }
 
-.modes { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0; margin: 0 0 1rem; }
-/* one strip of segments sharing their borders, the chosen one filled */
+/* --- the mode bar: plain words, the chosen one in the accent -------------- */
+
+.modes { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 1.5rem; margin: 0 0 2rem; }
 .modes .mode {
-  font: 600 0.85rem var(--mono);
-  padding: 0.4rem 0.8rem;
-  background: var(--panel);
+  font: 0.85rem var(--font);
+  text-transform: lowercase;
+  padding: 0.35rem 0;
+  background: transparent;
   color: var(--dim);
-  border: 1px solid var(--line);
-  margin-left: -1px;
-  position: relative;
-  transition: color 120ms, background-color 160ms var(--snap);
+  border: 0;
+  transition: color 120ms;
 }
-.modes .mode:first-child { margin-left: 0; }
-.modes .mode:hover:not(:disabled) { color: var(--text); z-index: 1; border-color: var(--text); }
-.modes .mode[aria-checked="true"] { color: var(--on-accent); background: var(--accent); border-color: var(--accent); z-index: 2; }
-.mode-note { color: var(--dim); font-size: 0.8rem; margin-left: 0.75rem; }
+/* the timed modes are their own group, set off by a short rule */
+.modes .mode[data-mode="sprint"] { border-left: 2px solid var(--line); padding-left: 1.5rem; }
+.modes .mode:hover:not(:disabled) { color: var(--text); }
+.modes .mode[aria-checked="true"] { color: var(--accent); }
+/* locked mid-race: the others fade, the one being raced stays readable */
+.modes .mode[aria-checked="true"]:disabled { opacity: 1; cursor: default; }
+.mode-note { color: var(--dim); font-size: 0.75rem; }
 /* Unlike the mode buttons (locked once a race is on), this is a per-browser
    display preference, not a race setting — it stays reachable throughout
    the race, floated above the lanes rather than inside the (hidden-while-
    racing) mode bar it used to share. */
-.status { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1rem; }
+.status { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1.5rem; align-items: baseline; }
 .status #phase { grid-column: 1 / -1; }
 .status h1 { overflow-wrap: anywhere; }
 .tape-toggle {
@@ -488,14 +503,11 @@ body.focus .passage.tape { max-height: none; }
   white-space: nowrap;
   gap: 0.5rem;
   margin: 0;
-  font: 600 0.75rem var(--mono);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0.25rem 0.6rem;
+  font: 0.8rem var(--font);
+  padding: 0.2rem 0;
   background: transparent;
   color: var(--dim);
-  border: 1px solid var(--line);
-  box-shadow: none;
+  border: 0;
 }
 /* a square indicator that fills when it's on */
 .tape-toggle::before {
@@ -505,7 +517,7 @@ body.focus .passage.tape { max-height: none; }
   border: 1.5px solid currentColor;
   transition: background-color 140ms var(--snap);
 }
-.tape-toggle[aria-pressed="true"] { color: var(--text); border-color: var(--text); }
+.tape-toggle[aria-pressed="true"] { color: var(--text); }
 .tape-toggle[aria-pressed="true"]::before { background: var(--accent); border-color: var(--accent); }
 .tape-toggle:hover { color: var(--text); }
 
@@ -562,32 +574,28 @@ body.focus .status:has(.live:empty) #phase { grid-column: 1 / 3; }
 .actions { display: flex; align-items: center; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap; }
 .actions:not(:has(button:not([hidden]))) { display: none; }
 
+/* buttons are flat blocks of colour, and fill in with the text colour on hover */
 button {
-  font: 600 1rem system-ui, sans-serif;
-  padding: 0.55rem 1rem;
-  background: var(--accent);
-  color: var(--on-accent);
+  font: 0.9rem var(--font);
+  padding: 0.55rem 1.1rem;
+  background: var(--panel);
+  color: var(--text);
   border: 0;
   cursor: pointer;
-  box-shadow: var(--lift);
-  transition: transform 90ms var(--snap), box-shadow 90ms var(--snap), background-color 140ms;
+  transition: background-color 120ms, color 120ms;
 }
-button:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--line); }
-button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--line); }
-/* in-strip and tab buttons sit flat in their row; no lift */
-.modes .mode, .who-tab, .tape-toggle { box-shadow: none; }
-.modes .mode:hover:not(:disabled), .who-tab:hover, .tape-toggle:hover,
-.modes .mode:active:not(:disabled), .who-tab:active, .tape-toggle:active { transform: none; box-shadow: none; }
+button:hover:not(:disabled) { background: var(--text); color: var(--bg); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 button[hidden] { display: none; }
-button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); box-shadow: none; }
+button.secondary { background: transparent; color: var(--dim); box-shadow: inset 0 0 0 1px var(--line); }
+button.secondary:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+#join:not(.secondary), #ready:not([aria-pressed="true"]) { background: var(--accent); color: var(--on-accent); }
+#join:not(.secondary):hover:not(:disabled), #ready:not([aria-pressed="true"]):hover { background: var(--text); color: var(--bg); }
+/* the one action waiting on you pulses a ring, not the button's own colour */
 button.beckon { animation: beckon-btn 1.6s ease-in-out infinite; }
-@keyframes beckon-btn {
-  50% { box-shadow: var(--lift-hi); transform: translate(-2px, -2px); }
-}
-@media (prefers-reduced-motion: reduce) { button.beckon { animation: none; } }
-#ready { background: var(--accent); color: var(--on-accent); border: 0; }
-#ready[aria-pressed="true"] { background: transparent; color: var(--text); border: 1px solid var(--line); box-shadow: none; }
+@keyframes beckon-btn { 50% { box-shadow: 0 0 0 4px var(--line); } }
+/* in-row text buttons never take the hover fill */
+.modes .mode:hover:not(:disabled), .who-tab:hover, .tape-toggle:hover { background: transparent; }
 
 .summary { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
 .summary[hidden] { display: none; }
